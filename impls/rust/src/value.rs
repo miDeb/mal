@@ -17,6 +17,7 @@ pub enum Value {
     String(String),
     Fn(Rc<dyn Fn(&[Value]) -> RuntimeResult<Value>>),
     Nil,
+    Bool(bool),
 }
 
 impl Value {

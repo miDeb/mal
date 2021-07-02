@@ -142,6 +142,9 @@ impl<'a> Reader<'a> {
         let value = self.next()?;
         Ok(match value {
             Token::Number(n) => Value::Number(n.parse().map_err(|_| ParseError::InvalidNumber)?),
+            Token::Ident(value) if value == "true" => Value::Bool(true),
+            Token::Ident(value) if value == "false" => Value::Bool(false),
+            Token::Ident(value) if value == "nil" => Value::Nil,
             Token::Ident(value) => Value::Symbol(value),
             Token::Keyword(value) => Value::Keyword(value),
             Token::String(value) => Value::String(value),

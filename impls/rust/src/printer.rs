@@ -29,6 +29,7 @@ impl Display for Value {
             Value::Map(map) => write_map(f, map),
             Value::Fn(_) => write!(f, "[function]"),
             Value::Nil => write!(f, "nil"),
+            Value::Bool(b) => write!(f, "{}", b),
         }
     }
 }
