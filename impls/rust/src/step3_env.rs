@@ -1,6 +1,6 @@
 #![feature(bindings_after_at)]
 
-use std::{collections::HashMap, io::Write, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 
 use env::Env;
 use reader::{ParseError, ParseResult};
@@ -18,27 +18,29 @@ mod value;
 fn main() {
     let mut rl = Editor::<()>::new();
     rl.load_history("history.txt").ok();
+    let env = Rc::new(RefCell::new(Env::new(None)));
     while let Ok(line) = rl.readline("user> ") {
         rl.add_history_entry(&line);
         match read(&line) {
             Ok(value) => {
-                let mut env = Env::new(None);
-                env.set(
+                let mut borrowed_env = env.borrow_mut();
+                borrowed_env.set(
                     "+".to_string(),
                     Value::Fn(Rc::new(|list| Ok(&list[0] + &list[1]))),
                 );
-                env.set(
+                borrowed_env.set(
                     "-".to_string(),
                     Value::Fn(Rc::new(|list| Ok(&list[0] - &list[1]))),
                 );
-                env.set(
+                borrowed_env.set(
                     "*".to_string(),
                     Value::Fn(Rc::new(|list| Ok(&list[0] * &list[1]))),
                 );
-                env.set(
+                borrowed_env.set(
                     "/".to_string(),
                     Value::Fn(Rc::new(|list| &list[0] / &list[1])),
                 );
+                drop(borrowed_env);
                 print(eval(value, &env));
             }
             Err(ParseError::EmptyInput) => {}
@@ -55,9 +57,43 @@ fn read(input: &str) -> ParseResult<Value> {
     reader::read_str(input)
 }
 
-fn eval(input: Value, env: &Env) -> RuntimeResult<Value> {
+fn eval(input: Value, env: &Rc<RefCell<Env>>) -> RuntimeResult<Value> {
     match input {
         Value::List(l) if l.is_empty() => Ok(Value::List(l)),
+        Value::List(l) if matches!(&l[0], Value::Symbol(n) if n == "def!") => {
+            // TODO: arity checking
+            let mut iter = l.into_iter();
+            iter.next();
+            let key = iter.next().unwrap();
+            let val = eval(iter.next().unwrap(), env)?;
+            env.borrow_mut().set(
+                key.into_env_map_key()
+                    .map_err(|e| RuntimeError::InvalidMapKey(e.to_string()))?,
+                val.clone(),
+            );
+            Ok(val)
+        }
+        Value::List(l) if matches!(&l[0], Value::Symbol(n) if n == "let*") => {
+            let new_env = Rc::new(RefCell::new(Env::new(Some(env.clone()))));
+            let mut args_iter = l.into_iter();
+            args_iter.next();
+            let mut bindings_iter = args_iter
+                .next()
+                .unwrap()
+                .try_into_list_or_vec()
+                .unwrap()
+                .into_iter();
+            while let Some(key) = bindings_iter.next() {
+                let value = eval(bindings_iter.next().unwrap(), &new_env)?;
+                new_env.borrow_mut().set(
+                    key.into_env_map_key()
+                        .map_err(|e| RuntimeError::InvalidMapKey(e.to_string()))?,
+                    value,
+                );
+            }
+
+            eval(args_iter.next().unwrap(), &new_env)
+        }
         Value::List(l) => {
             let new_list = eval_ast(Value::List(l), env)?.into_list();
             let (first, rest) = new_list.split_first().unwrap();
@@ -77,7 +113,7 @@ fn print(value: RuntimeResult<Value>) {
     }
 }
 
-fn eval_ast(value: Value, env: &Env) -> RuntimeResult<Value> {
+fn eval_ast(value: Value, env: &Rc<RefCell<Env>>) -> RuntimeResult<Value> {
     match value {
         Value::List(list) => {
             let mut new_list = Vec::with_capacity(list.len());
@@ -100,7 +136,7 @@ fn eval_ast(value: Value, env: &Env) -> RuntimeResult<Value> {
             }
             Ok(Value::Map(new_map))
         }
-        Value::Symbol(s) => env.data.get(&s).cloned().ok_or(RuntimeError::FnNotFound(s)),
+        Value::Symbol(s) => Env::get(env, &s),
         v => Ok(v),
     }
 }

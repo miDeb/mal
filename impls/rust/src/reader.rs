@@ -14,7 +14,7 @@ pub enum ParseError {
     InvalidNumber,
     UnexpectedToken,
     InvalidStringEscape(char),
-    InvalidMapKey,
+    InvalidMapKey(String),
 }
 
 impl Display for ParseError {
@@ -28,7 +28,7 @@ impl Display for ParseError {
             ParseError::EmptyKeyword => write!(f, "empty keyword"),
             ParseError::UnexpectedToken => write!(f, "unexpected token"),
             ParseError::InvalidStringEscape(c) => write!(f, "invalid string escape: \\{}", c),
-            ParseError::InvalidMapKey => write!(f, "invalid map key"),
+            ParseError::InvalidMapKey(k) => write!(f, "invalid map key '{}'", k),
             ParseError::EmptyInput => unreachable!(),
         }
     }
@@ -130,7 +130,7 @@ impl<'a> Reader<'a> {
             map.insert(
                 self.read_form()?
                     .into_hash_map_key()
-                    .ok_or(ParseError::InvalidMapKey)?,
+                    .map_err(|e| ParseError::InvalidMapKey(e.to_string()))?,
                 self.read_form()?,
             );
         }

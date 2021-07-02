@@ -28,6 +28,7 @@ impl Display for Value {
             Value::String(value) => write!(f, "{:?}", value),
             Value::Map(map) => write_map(f, map),
             Value::Fn(_) => write!(f, "[function]"),
+            Value::Nil => write!(f, "nil"),
         }
     }
 }

@@ -16,13 +16,20 @@ pub enum Value {
     Keyword(String),
     String(String),
     Fn(Rc<dyn Fn(&[Value]) -> RuntimeResult<Value>>),
+    Nil,
 }
 
 impl Value {
-    pub fn into_hash_map_key(self) -> Option<String> {
+    pub fn into_hash_map_key(self) -> Result<String, Self> {
         match self {
-            Value::Keyword(s) | Value::String(s) => Some(s),
-            _ => None,
+            Value::Keyword(s) | Value::String(s) => Ok(s),
+            _ => Err(self),
+        }
+    }
+    pub fn into_env_map_key(self) -> Result<String, Self> {
+        match self {
+            Value::Symbol(s) => Ok(s),
+            _ => Err(self),
         }
     }
 
@@ -30,6 +37,12 @@ impl Value {
         match self {
             Value::List(l) => l,
             _ => unreachable!(),
+        }
+    }
+    pub fn try_into_list_or_vec(self) -> Option<Vec<Value>> {
+        match self {
+            Value::List(l) | Value::Vec(l) => Some(l),
+            _ => None,
         }
     }
     pub fn as_fn(&self) -> RuntimeResult<&dyn Fn(&[Value]) -> RuntimeResult<Value>> {
