@@ -107,14 +107,16 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn read_num(&mut self) -> ParseResult<String> {
+        let mut is_first = true;
         while let Some(char) = self.peek() {
             if Self::is_punct(char) || Self::is_whitespace(char) {
                 break;
             }
-            if !matches!(char, '0'..='9') {
+            if !matches!(char, '0'..='9') && (!is_first && char == '-') {
                 return Err(ParseError::InvalidNumber);
             }
             self.advance();
+            is_first = false;
         }
         Ok(self.input[self.start..self.current].to_string())
     }
@@ -153,6 +155,7 @@ impl<'a> Tokenizer<'a> {
                 '"' => Token::String(self.read_string()?),
                 ':' => Token::Keyword(self.read_keyword()?),
                 '0'..='9' => Token::Number(self.read_num()?),
+                '-' if matches!(self.peek(), Some('0'..='9')) => Token::Number(self.read_num()?),
                 c if Self::is_ident(c) => Token::Ident(self.read_ident()),
                 _ => unreachable!("all characters can be idents if nothing else"),
             },

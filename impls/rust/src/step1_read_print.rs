@@ -6,6 +6,7 @@ use value::Value;
 
 mod printer;
 mod reader;
+mod runtime_errors;
 mod tokenize;
 mod value;
 
@@ -16,7 +17,7 @@ fn main() {
         rl.add_history_entry(&line);
         match read(&line) {
             Ok(value) => {
-                println!("{}", print(eval(value)));
+                println!("{}", eval(value));
             }
             Err(ParseError::EmptyInput) => {}
             Err(e) => {
@@ -34,10 +35,4 @@ fn read(input: &str) -> ParseResult<Value> {
 
 fn eval(input: Value) -> Value {
     input
-}
-
-fn print(value: Value) -> String {
-    let mut buf = String::new();
-    printer::pr_str(&value, &mut buf);
-    buf
 }
