@@ -11,3 +11,7 @@ rustyline = "8.2.0"
 [[bin]]
 name = "step0_repl"
 path = "src/step0_repl.rs"
+
+[[bin]]
+name = "step1_read_print"
+path = "src/step1_read_print.rs"
