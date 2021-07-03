@@ -1,5 +1,6 @@
 #![feature(bindings_after_at)]
 
+use mal_core::init_env;
 use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 
 use env::Env;
@@ -9,6 +10,7 @@ use rustyline::Editor;
 use value::Value;
 
 mod env;
+mod mal_core;
 mod printer;
 mod reader;
 mod runtime_errors;
@@ -19,27 +21,17 @@ fn main() {
     let mut rl = Editor::<()>::new();
     rl.load_history("history.txt").ok();
     let env = Rc::new(RefCell::new(Env::new(None)));
+    eval(
+        read("(def! not (fn* (a) (if a false true)))").unwrap(),
+        &env,
+    )
+    .unwrap();
     while let Ok(line) = rl.readline("user> ") {
         rl.add_history_entry(&line);
         match read(&line) {
             Ok(value) => {
                 let mut borrowed_env = env.borrow_mut();
-                borrowed_env.set(
-                    "+".to_string(),
-                    Value::Fn(Rc::new(|list| Ok(&list[0] + &list[1]))),
-                );
-                borrowed_env.set(
-                    "-".to_string(),
-                    Value::Fn(Rc::new(|list| Ok(&list[0] - &list[1]))),
-                );
-                borrowed_env.set(
-                    "*".to_string(),
-                    Value::Fn(Rc::new(|list| Ok(&list[0] * &list[1]))),
-                );
-                borrowed_env.set(
-                    "/".to_string(),
-                    Value::Fn(Rc::new(|list| &list[0] / &list[1])),
-                );
+                init_env(&mut borrowed_env);
                 drop(borrowed_env);
                 print(eval(value, &env));
             }
@@ -93,6 +85,45 @@ fn eval(input: Value, env: &Rc<RefCell<Env>>) -> RuntimeResult<Value> {
             }
 
             eval(args_iter.next().unwrap(), &new_env)
+        }
+        Value::List(l) if matches!(&l[0], Value::Symbol(n) if n == "do") => {
+            // Change from the "official" algorithm, but is semantically the same.
+            let mut iter = l.into_iter();
+            iter.next();
+            let mut last = eval(iter.next().unwrap(), env)?;
+            for value in iter {
+                last = eval(value, env)?;
+            }
+            Ok(last)
+        }
+        Value::List(l) if matches!(&l[0], Value::Symbol(n) if n == "if") => {
+            let mut iter = l.into_iter();
+            iter.next();
+            let cond = eval(iter.next().unwrap(), env)?;
+            let then = iter.next().unwrap();
+            if !matches!(cond, Value::Bool(false) | Value::Nil) {
+                eval(then, env)
+            } else if let Some(else_case) = iter.next() {
+                eval(else_case, env)
+            } else {
+                Ok(Value::Nil)
+            }
+        }
+        Value::List(l) if matches!(&l[0], Value::Symbol(n) if n == "fn*") => {
+            let mut iter = l.into_iter();
+            iter.next();
+            let env = env.clone();
+            let binds = iter.next().unwrap().try_into_list_or_vec().unwrap();
+            let second = iter.next().unwrap();
+            let closure = move |args: &[Value]| {
+                let env = Rc::new(RefCell::new(Env::new_with_binds(
+                    Some(env.clone()),
+                    binds.iter().cloned(),
+                    args.iter().cloned(),
+                )?));
+                eval(second.clone(), &env)
+            };
+            Ok(Value::Fn(Rc::new(closure)))
         }
         Value::List(l) => {
             let new_list = eval_ast(Value::List(l), env)?.into_list();
