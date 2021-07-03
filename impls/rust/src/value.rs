@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     cmp::Ordering,
     collections::HashMap,
     ops::{Add, Div, Mul, Sub},
@@ -6,9 +7,18 @@ use std::{
 };
 
 use crate::{
+    env::Env,
     printer::pr_str,
     runtime_errors::{RuntimeError, RuntimeResult},
 };
+#[derive(Clone)]
+pub struct Closure {
+    pub ast: Value,
+    pub params: Vec<Value>,
+    pub env: Rc<RefCell<Env>>,
+}
+
+type MalFunction = fn(&[Value]) -> RuntimeResult<Value>;
 
 #[derive(Clone)]
 pub enum Value {
@@ -19,7 +29,8 @@ pub enum Value {
     Symbol(String),
     Keyword(String),
     String(String),
-    Fn(Rc<dyn Fn(&[Value]) -> RuntimeResult<Value>>),
+    Fn(MalFunction),
+    Closure(Rc<Closure>),
     Nil,
     Bool(bool),
 }
@@ -54,12 +65,6 @@ impl Value {
         match self {
             Value::List(l) | Value::Vec(l) => Some(l),
             _ => None,
-        }
-    }
-    pub fn as_fn(&self) -> RuntimeResult<&dyn Fn(&[Value]) -> RuntimeResult<Value>> {
-        match self {
-            Value::Fn(f) => Ok(f.as_ref()),
-            no_fun => Err(RuntimeError::NotAFunction(no_fun.to_string())),
         }
     }
     pub fn value_to_string(&self, readably: bool) -> String {
@@ -141,9 +146,8 @@ impl PartialEq for Value {
             (Value::Symbol(a), Value::Symbol(b)) => a == b,
             (Value::Keyword(a), Value::Keyword(b)) => a == b,
             (Value::String(a), Value::String(b)) => a == b,
-            (Value::Fn(a), Value::Fn(b)) => {
-                std::ptr::eq(Rc::as_ptr(a) as *const u8, Rc::as_ptr(b) as *const u8)
-            }
+            (Value::Fn(a), Value::Fn(b)) => std::ptr::eq(a, b),
+            (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(a, b),
             (Value::Number(a), Value::Number(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,

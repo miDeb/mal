@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use crate::runtime_errors::{RuntimeError, RuntimeResult};
 use crate::Value;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};

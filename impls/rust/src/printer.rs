@@ -38,7 +38,7 @@ pub fn pr_str(value: &Value, f: &mut impl Write, readably: bool) -> std::fmt::Re
             }
         }
         Value::Map(map) => write_map(f, map, readably),
-        Value::Fn(_) => write!(f, "#<function>"),
+        Value::Fn(_) | Value::Closure(_) => write!(f, "#<function>"),
         Value::Nil => write!(f, "nil"),
         Value::Bool(b) => write!(f, "{}", b),
     }
