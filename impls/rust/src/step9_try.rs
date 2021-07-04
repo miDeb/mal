@@ -193,6 +193,26 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                         let ast = l.into_iter().nth(1).unwrap();
                         macro_expand(ast, &env)
                     }
+                    Value::Symbol(n) if n == "try*" => {
+                        let mut args = l.into_iter().skip(1);
+                        let result = eval(args.next().unwrap(), env.clone());
+                        match result {
+                            Ok(value) => return Ok(value),
+                            Err(err) => {
+                                let mut catch_block =
+                                    args.next().unwrap().into_list().into_iter().skip(1);
+                                let bind_error_to = catch_block.next().unwrap();
+                                let to_eval = catch_block.next().unwrap();
+                                input = to_eval;
+                                env = Rc::new(RefCell::new(Env::new_with_binds(
+                                    Some(env),
+                                    std::iter::once(bind_error_to),
+                                    std::iter::once(err),
+                                )?));
+                                continue;
+                            }
+                        }
+                    }
                     _ => {
                         let new_list = eval_ast(Value::List(l), env.clone())?.into_list();
                         let mut args = new_list.into_iter();

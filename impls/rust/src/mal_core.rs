@@ -245,4 +245,8 @@ pub fn init_env(env: &mut Env) {
             v => Err(runtime_errors::not_a("list", v)),
         }),
     );
+    env.set(
+        "throw".to_string(),
+        make_fn_val(|args, _| Err(args[0].clone())),
+    );
 }
