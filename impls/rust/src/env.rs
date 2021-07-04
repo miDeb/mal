@@ -1,7 +1,8 @@
-use crate::runtime_errors::{RuntimeError, RuntimeResult};
+use crate::runtime_errors::{self, RuntimeResult};
 use crate::Value;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+#[derive(Debug)]
 pub struct Env {
     pub data: HashMap<String, Value>,
     outer: Option<Rc<RefCell<Env>>>,
@@ -28,10 +29,10 @@ impl Env {
             if matches!(&key, Value::Symbol(s) if s == "&") {
                 let key = binds.next().unwrap();
                 let values = exprs.collect();
-                env.set(key.into_env_map_key()?, Value::List(values));
+                env.set(key.try_into_env_map_key()?, Value::List(values));
                 break;
             } else {
-                env.set(key.into_env_map_key()?, exprs.next().unwrap())
+                env.set(key.try_into_env_map_key()?, exprs.next().unwrap())
             }
         }
         Ok(env)
@@ -53,7 +54,7 @@ impl Env {
 
     pub fn get(env: &Rc<RefCell<Env>>, key: &str) -> RuntimeResult<Value> {
         Ok(Self::find(env, key)
-            .ok_or_else(|| RuntimeError::NotFoundInEnv(key.into()))?
+            .ok_or_else(|| runtime_errors::error_to_string(format!("{} not found", key)))?
             .as_ref()
             .borrow()
             .data

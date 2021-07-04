@@ -2,6 +2,7 @@ use std::{
     cell::RefCell,
     cmp::Ordering,
     collections::HashMap,
+    fmt,
     ops::{Add, Div, Mul, Sub},
     rc::Rc,
 };
@@ -9,9 +10,9 @@ use std::{
 use crate::{
     env::Env,
     printer::pr_str,
-    runtime_errors::{RuntimeError, RuntimeResult},
+    runtime_errors::{self, RuntimeResult},
 };
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Closure {
     pub ast: Value,
     pub params: Vec<Value>,
@@ -19,9 +20,17 @@ pub struct Closure {
     pub is_macro: bool,
 }
 
-type MalFunction = fn(&[Value], Rc<RefCell<Env>>) -> RuntimeResult<Value>;
-
 #[derive(Clone)]
+pub struct MalFunction(pub fn(&[Value], Rc<RefCell<Env>>) -> RuntimeResult<Value>);
+
+impl fmt::Debug for MalFunction {
+    // Workaround since debug can't be derived for this fn signature.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Pointer::fmt(&(self.0 as *const ()), f)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum Value {
     List(Vec<Value>),
     Vec(Vec<Value>),
@@ -45,10 +54,10 @@ impl Value {
             _ => Err(self),
         }
     }
-    pub fn into_env_map_key(self) -> RuntimeResult<String> {
+    pub fn try_into_env_map_key(self) -> RuntimeResult<String> {
         match self {
             Value::Symbol(s) => Ok(s),
-            _ => Err(RuntimeError::InvalidMapKey(self.to_string())),
+            _ => Err(runtime_errors::not_a("map key (symbol)", &self)),
         }
     }
 
@@ -75,10 +84,10 @@ impl Value {
         pr_str(self, &mut buf, readably).unwrap();
         buf
     }
-    pub fn try_as_str(&self) -> Option<&str> {
+    pub fn try_as_str(&self) -> RuntimeResult<&str> {
         match self {
-            Value::String(str) => Some(str),
-            _ => None,
+            Value::String(str) => Ok(str),
+            v => Err(runtime_errors::not_a("string", v)),
         }
     }
     pub fn try_as_number(&self) -> Option<i32> {
@@ -133,7 +142,7 @@ impl Div for &Value {
         match (self.deref_atom_recursively(), rhs.deref_atom_recursively()) {
             (Value::Number(a), Value::Number(b)) => {
                 if b == 0 {
-                    Err(RuntimeError::DivisionByZero)
+                    Err(runtime_errors::error_to_string("division by zero"))
                 } else {
                     Ok(Value::Number(a / b))
                 }

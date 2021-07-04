@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 
 use env::Env;
 use reader::{ParseError, ParseResult};
-use runtime_errors::{RuntimeError, RuntimeResult};
+use runtime_errors::RuntimeResult;
 use rustyline::Editor;
 use value::Value;
 
@@ -101,11 +101,8 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                         let mut iter = l.into_iter();
                         let key = iter.nth(1).unwrap();
                         let val = eval(iter.next().unwrap(), env.clone())?;
-                        env.borrow_mut().set(
-                            key.into_env_map_key()
-                                .map_err(|e| RuntimeError::InvalidMapKey(e.to_string()))?,
-                            val.clone(),
-                        );
+                        env.borrow_mut()
+                            .set(key.try_into_env_map_key()?, val.clone());
                         Ok(val)
                     }
                     Value::Symbol(n) if n == "let*" => {
@@ -120,11 +117,7 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                             .into_iter();
                         while let Some(key) = bindings_iter.next() {
                             let value = eval(bindings_iter.next().unwrap(), new_env.clone())?;
-                            new_env.borrow_mut().set(
-                                key.into_env_map_key()
-                                    .map_err(|e| RuntimeError::InvalidMapKey(e.to_string()))?,
-                                value,
-                            );
+                            new_env.borrow_mut().set(key.try_into_env_map_key()?, value);
                         }
 
                         input = args_iter.next().unwrap();
@@ -182,11 +175,8 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                                 todo!()
                             }
                         };
-                        env.borrow_mut().set(
-                            key.into_env_map_key()
-                                .map_err(|e| RuntimeError::InvalidMapKey(e.to_string()))?,
-                            val.clone(),
-                        );
+                        env.borrow_mut()
+                            .set(key.try_into_env_map_key()?, val.clone());
                         Ok(val)
                     }
                     Value::Symbol(n) if n == "quote" => Ok(l.into_iter().nth(1).unwrap()),
@@ -213,7 +203,7 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                                 input = args.next().unwrap();
                                 continue;
                             }
-                            Value::Fn(f) => f(args.as_slice(), env),
+                            Value::Fn(f) => (f.0)(args.as_slice(), env),
                             Value::Closure(closure) => {
                                 input = closure.ast.clone();
                                 env = Rc::new(RefCell::new(Env::new_with_binds(
@@ -223,7 +213,7 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                                 )?));
                                 continue;
                             }
-                            no_fun => return Err(RuntimeError::NotAFunction(no_fun.to_string())),
+                            no_fun => return Err(runtime_errors::not_a("function", &no_fun)),
                         }
                     }
                 }
@@ -315,7 +305,7 @@ fn process_list(list: Vec<Value>) -> RuntimeResult<Value> {
 fn as_macro_call(ast: Value, env: &Rc<RefCell<Env>>) -> Option<Rc<Closure>> {
     match ast {
         Value::List(v) if !v.is_empty() => {
-            if let Ok(k) = v.into_iter().next().unwrap().into_env_map_key() {
+            if let Ok(k) = v.into_iter().next().unwrap().try_into_env_map_key() {
                 match Env::get(env, &k) {
                     Ok(Value::Closure(c)) if c.is_macro => Some(c),
                     _ => None,
