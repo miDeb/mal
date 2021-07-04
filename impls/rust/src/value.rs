@@ -16,6 +16,7 @@ pub struct Closure {
     pub ast: Value,
     pub params: Vec<Value>,
     pub env: Rc<RefCell<Env>>,
+    pub is_macro: bool,
 }
 
 type MalFunction = fn(&[Value], Rc<RefCell<Env>>) -> RuntimeResult<Value>;
@@ -77,6 +78,12 @@ impl Value {
     pub fn try_as_str(&self) -> Option<&str> {
         match self {
             Value::String(str) => Some(str),
+            _ => None,
+        }
+    }
+    pub fn try_as_number(&self) -> Option<i32> {
+        match self {
+            Value::Number(n) => Some(*n),
             _ => None,
         }
     }
@@ -152,7 +159,10 @@ impl Ord for Value {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        match (self.deref_atom_recursively(), other.deref_atom_recursively()) {
+        match (
+            self.deref_atom_recursively(),
+            other.deref_atom_recursively(),
+        ) {
             (Value::List(a), Value::List(b))
             | (Value::Vec(a), Value::Vec(b))
             | (Value::List(a), Value::Vec(b))

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, convert::TryInto, rc::Rc};
 
 use crate::{
     env::Env,
@@ -200,8 +200,39 @@ pub fn init_env(env: &mut Env) {
 
     env.set(
         "vec".to_string(),
-        Value::Fn(|args, _| {
-            Ok(Value::Vec(args[0].clone().try_into_list_or_vec().unwrap()))
+        Value::Fn(|args, _| Ok(Value::Vec(args[0].clone().try_into_list_or_vec().unwrap()))),
+    );
+
+    env.set(
+        "nth".to_string(),
+        Value::Fn(|args, _| match &args[0] {
+            Value::List(l) | Value::Vec(l) if !l.is_empty() => {
+                let index: usize = args[1]
+                    .try_as_number()
+                    .unwrap()
+                    .try_into()
+                    .map_err(|_| RuntimeError::Index)?;
+
+                Ok(l.get(index).ok_or(RuntimeError::Index)?.clone())
+            }
+            Value::List(_) | Value::Vec(_) | Value::Nil => Ok(Value::Nil),
+            v => Err(RuntimeError::NotAList(v.to_string())),
+        }),
+    );
+    env.set(
+        "first".to_string(),
+        Value::Fn(|args, _| match &args[0] {
+            Value::List(l) | Value::Vec(l) if !l.is_empty() => Ok(l[0].clone()),
+            Value::List(_) | Value::Vec(_) | Value::Nil => Ok(Value::Nil),
+            v => Err(RuntimeError::NotAList(v.to_string())),
+        }),
+    );
+    env.set(
+        "rest".to_string(),
+        Value::Fn(|args, _| match &args[0] {
+            Value::List(l) | Value::Vec(l) if !l.is_empty() => Ok(Value::List(l[1..].to_vec())),
+            Value::List(_) | Value::Vec(_) | Value::Nil => Ok(Value::List(Vec::new())),
+            v => Err(RuntimeError::NotAList(v.to_string())),
         }),
     );
 }

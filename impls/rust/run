@@ -1,2 +1,2 @@
 #!/bin/bash
-cargo r -q --bin $STEP -- ${@}
+cargo r --release -q --bin $STEP -- ${@}

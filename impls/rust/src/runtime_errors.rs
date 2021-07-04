@@ -6,12 +6,14 @@ use crate::reader::ParseError;
 pub enum RuntimeError {
     FnNotFound(String),
     NotAFunction(String),
+    NotAList(String),
     NotAnAtom(String),
     DivisionByZero,
     NotFoundInEnv(String),
     InvalidMapKey(String),
     ParseError(ParseError),
     IoError(std::io::Error),
+    Index,
 }
 
 impl Display for RuntimeError {
@@ -25,6 +27,8 @@ impl Display for RuntimeError {
             RuntimeError::ParseError(e) => write!(f, "parsing failed: {}", e),
             RuntimeError::IoError(e) => write!(f, "{}", e),
             RuntimeError::NotAnAtom(no_atom) => write!(f, "'{}' is not an atom", no_atom),
+            RuntimeError::Index => write!(f, "invalid index"),
+            RuntimeError::NotAList(no_list) => write!(f, "'{}' is not a list", no_list),
         }
     }
 }

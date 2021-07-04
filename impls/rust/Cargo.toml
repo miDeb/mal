@@ -9,5 +9,5 @@ edition = "2018"
 rustyline = "8.2.0"
 
 [[bin]]
-name = "step7_quote"
-path = "src/step7_quote.rs"
+name = "step8_macros"
+path = "src/step8_macros.rs"
