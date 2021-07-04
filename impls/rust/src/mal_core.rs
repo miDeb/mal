@@ -178,4 +178,30 @@ pub fn init_env(env: &mut Env) {
             v => Err(RuntimeError::NotAnAtom(v.to_string())),
         }),
     );
+
+    env.set(
+        "cons".to_string(),
+        Value::Fn(|args, _| {
+            let mut list = args[1].clone().try_into_list_or_vec().unwrap();
+            list.insert(0, args[0].clone());
+            Ok(Value::List(list))
+        }),
+    );
+    env.set(
+        "concat".to_string(),
+        Value::Fn(|args, _| {
+            let mut list = Vec::new();
+            for arg in args {
+                list.append(&mut arg.clone().try_into_list_or_vec().unwrap());
+            }
+            Ok(Value::List(list))
+        }),
+    );
+
+    env.set(
+        "vec".to_string(),
+        Value::Fn(|args, _| {
+            Ok(Value::Vec(args[0].clone().try_into_list_or_vec().unwrap()))
+        }),
+    );
 }

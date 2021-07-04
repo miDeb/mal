@@ -136,8 +136,7 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
             }
             Value::List(l) if matches!(&l[0], Value::Symbol(n) if n == "if") => {
                 let mut iter = l.into_iter();
-                iter.next();
-                let cond = eval(iter.next().unwrap(), env.clone())?;
+                let cond = eval(iter.nth(1).unwrap(), env.clone())?;
                 let then = iter.next().unwrap();
                 if !matches!(cond, Value::Bool(false) | Value::Nil) {
                     input = then;
@@ -151,11 +150,22 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
             }
             Value::List(l) if matches!(&l[0], Value::Symbol(n) if n == "fn*") => {
                 let mut iter = l.into_iter();
-                iter.next();
                 let env = env;
-                let params = iter.next().unwrap().try_into_list_or_vec().unwrap();
+                let params = iter.nth(1).unwrap().try_into_list_or_vec().unwrap();
                 let ast = iter.next().unwrap();
                 Ok(Value::Closure(Rc::new(Closure { ast, params, env })))
+            }
+            Value::List(l) if matches!(&l[0], Value::Symbol(n) if n == "quote") => {
+                Ok(l.into_iter().nth(1).unwrap())
+            }
+            Value::List(l) if matches!(&l[0], Value::Symbol(n) if n == "quasiquoteexpand") => {
+                let ast = l.into_iter().nth(1).unwrap();
+                quasiquote(ast)
+            }
+            Value::List(l) if matches!(&l[0], Value::Symbol(n) if n == "quasiquote") => {
+                let ast = l.into_iter().nth(1).unwrap();
+                input = quasiquote(ast)?;
+                continue;
             }
             Value::List(l) => {
                 let new_list = eval_ast(Value::List(l), env.clone())?.into_list();
@@ -221,4 +231,45 @@ fn eval_ast(value: Value, env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
         Value::Symbol(s) => Env::get(&env, &s),
         v => Ok(v),
     }
+}
+
+fn quasiquote(ast: Value) -> RuntimeResult<Value> {
+    match ast {
+        Value::List(l) if matches!(l.get(0), Some(Value::Symbol(n)) if n == "unquote") => {
+            Ok(l.into_iter().nth(1).unwrap())
+        }
+        Value::List(l) => process_list(l),
+        Value::Vec(ast) => Ok(Value::List(vec![
+            Value::Symbol("vec".to_string()),
+            process_list(ast)?,
+        ])),
+        v @ Value::Map(_) | v @ Value::Symbol(_) => {
+            Ok(Value::List(vec![Value::Symbol("quote".to_string()), v]))
+        }
+        v => Ok(v),
+    }
+}
+
+fn process_list(list: Vec<Value>) -> RuntimeResult<Value> {
+    let mut result = Vec::new();
+    for elt in list.into_iter().rev() {
+        result = match elt {
+            Value::List(l) if matches!(l.get(0), Some(Value::Symbol(n)) if n == "splice-unquote") =>
+            {
+                vec![
+                    Value::Symbol("concat".to_string()),
+                    l.into_iter().nth(1).unwrap(),
+                    Value::List(result),
+                ]
+            }
+            v => {
+                vec![
+                    Value::Symbol("cons".to_string()),
+                    quasiquote(v)?,
+                    Value::List(result),
+                ]
+            }
+        }
+    }
+    Ok(Value::List(result))
 }
