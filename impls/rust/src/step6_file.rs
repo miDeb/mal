@@ -28,23 +28,55 @@ fn main() {
         env.clone(),
     )
     .unwrap();
+    eval(
+        read(r#"(def! load-file (fn* (f) (eval (read-string (str "(do " (slurp f) "\nnil)")))))"#)
+            .unwrap(),
+        env.clone(),
+    )
+    .unwrap();
+    env.borrow_mut()
+        .set("eval".to_string(), Value::Eval(env.clone()));
+
+    if let Some(file_name) = std::env::args().nth(1) {
+        let argv = Value::List(std::env::args().skip(2).map(Value::String).collect());
+        env.borrow_mut().set("*ARGV*", argv);
+        match re(
+            format!(r#"(load-file "{}")"#, file_name.replace('"', r#"\""#)),
+            &env,
+        ) {
+            Some(r) if r.is_err() => print(r),
+            // don't print the nil from reading the file.
+            _ => {}
+        }
+        return;
+    }
+    // we can't have any args if we reach this point, but *ARGV* must be present.
+    env.borrow_mut().set("*ARGV*", Value::List(vec![]));
+
     while let Ok(line) = rl.readline("user> ") {
         rl.add_history_entry(&line);
-        match read(&line) {
-            Ok(value) => {
-                let mut borrowed_env = env.borrow_mut();
-                init_env(&mut borrowed_env);
-                drop(borrowed_env);
-                print(eval(value, env.clone()));
-            }
-            Err(ParseError::EmptyInput) => {}
-            Err(e) => {
-                eprintln!("{}", e);
-            }
-        };
+        if let Some(a) = re(line, &env) {
+            print(a)
+        }
         std::io::stdout().flush().unwrap();
     }
     rl.save_history("history.txt").unwrap();
+}
+
+fn re(line: String, env: &Rc<RefCell<Env>>) -> Option<RuntimeResult<Value>> {
+    match read(&line) {
+        Ok(value) => {
+            let mut borrowed_env = env.borrow_mut();
+            init_env(&mut borrowed_env);
+            drop(borrowed_env);
+            return Some(eval(value, env.clone()));
+        }
+        Err(ParseError::EmptyInput) => {}
+        Err(e) => {
+            eprintln!("{}", e);
+        }
+    };
+    None
 }
 
 fn read(input: &str) -> ParseResult<Value> {
@@ -126,11 +158,16 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                 Ok(Value::Closure(Rc::new(Closure { ast, params, env })))
             }
             Value::List(l) => {
-                let new_list = eval_ast(Value::List(l), env)?.into_list();
+                let new_list = eval_ast(Value::List(l), env.clone())?.into_list();
                 let mut args = new_list.into_iter();
                 let first = args.next().unwrap();
                 match first {
-                    Value::Fn(f) => f(args.as_slice()),
+                    Value::Eval(eval_env) => {
+                        env = eval_env;
+                        input = args.next().unwrap();
+                        continue;
+                    }
+                    Value::Fn(f) => f(args.as_slice(), env),
                     Value::Closure(closure) => {
                         input = closure.ast.clone();
                         env = Rc::new(RefCell::new(Env::new_with_binds(

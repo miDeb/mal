@@ -18,7 +18,7 @@ pub struct Closure {
     pub env: Rc<RefCell<Env>>,
 }
 
-type MalFunction = fn(&[Value]) -> RuntimeResult<Value>;
+type MalFunction = fn(&[Value], Rc<RefCell<Env>>) -> RuntimeResult<Value>;
 
 #[derive(Clone)]
 pub enum Value {
@@ -31,8 +31,10 @@ pub enum Value {
     String(String),
     Fn(MalFunction),
     Closure(Rc<Closure>),
+    Eval(Rc<RefCell<Env>>),
     Nil,
     Bool(bool),
+    Atom(Rc<RefCell<Value>>),
 }
 
 impl Value {
@@ -72,13 +74,26 @@ impl Value {
         pr_str(self, &mut buf, readably).unwrap();
         buf
     }
+    pub fn try_as_str(&self) -> Option<&str> {
+        match self {
+            Value::String(str) => Some(str),
+            _ => None,
+        }
+    }
+    fn deref_atom_recursively(&self) -> Self {
+        let mut curr = self.clone();
+        while let Value::Atom(v) = curr {
+            curr = v.borrow().clone();
+        }
+        curr
+    }
 }
 
 impl Add for &Value {
     type Output = Value;
 
     fn add(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
+        match (self.deref_atom_recursively(), rhs.deref_atom_recursively()) {
             (Value::Number(a), Value::Number(b)) => Value::Number(a + b),
             _ => todo!("value type unsupported"),
         }
@@ -88,7 +103,7 @@ impl Sub for &Value {
     type Output = Value;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
+        match (self.deref_atom_recursively(), rhs.deref_atom_recursively()) {
             (Value::Number(a), Value::Number(b)) => Value::Number(a - b),
             _ => todo!("value type unsupported"),
         }
@@ -98,7 +113,7 @@ impl Mul for &Value {
     type Output = Value;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
+        match (self.deref_atom_recursively(), rhs.deref_atom_recursively()) {
             (Value::Number(a), Value::Number(b)) => Value::Number(a * b),
             _ => todo!("value type unsupported"),
         }
@@ -108,9 +123,9 @@ impl Div for &Value {
     type Output = RuntimeResult<Value>;
 
     fn div(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
+        match (self.deref_atom_recursively(), rhs.deref_atom_recursively()) {
             (Value::Number(a), Value::Number(b)) => {
-                if *b == 0 {
+                if b == 0 {
                     Err(RuntimeError::DivisionByZero)
                 } else {
                     Ok(Value::Number(a / b))
@@ -137,7 +152,7 @@ impl Ord for Value {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
+        match (self.deref_atom_recursively(), other.deref_atom_recursively()) {
             (Value::List(a), Value::List(b))
             | (Value::Vec(a), Value::Vec(b))
             | (Value::List(a), Value::Vec(b))
@@ -146,11 +161,12 @@ impl PartialEq for Value {
             (Value::Symbol(a), Value::Symbol(b)) => a == b,
             (Value::Keyword(a), Value::Keyword(b)) => a == b,
             (Value::String(a), Value::String(b)) => a == b,
-            (Value::Fn(a), Value::Fn(b)) => std::ptr::eq(a, b),
-            (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(a, b),
+            (Value::Fn(a), Value::Fn(b)) => std::ptr::eq(&a, &b),
+            (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(&a, &b),
             (Value::Number(a), Value::Number(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Eval(_), Value::Eval(_)) => true,
             _ => false,
         }
     }
