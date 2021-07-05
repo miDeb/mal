@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, convert::TryInto, rc::Rc};
 
 use crate::{
     env::Env,
-    eval,
+    eval_fn_no_tco,
     printer::pr_str,
     reader::{read_str, ParseError},
     runtime_errors::{self, error_to_string_with_ctx, RuntimeResult},
@@ -168,10 +168,9 @@ pub fn init_env(env: &mut Env) {
         "swap!",
         make_fn_val(|list, env| match &list[0] {
             Value::Atom(v) => {
-                let mut fn_args = vec![list[1].clone(), v.borrow().clone()];
+                let mut fn_args = vec![v.borrow().clone()];
                 fn_args.extend(list[2..].iter().cloned());
-                let invocation = Value::List(fn_args);
-                let result = eval(invocation, env)?;
+                let result = eval_fn_no_tco(list[1].clone(), fn_args, env)?;
                 v.replace(result.clone());
                 Ok(result)
             }
@@ -246,15 +245,7 @@ pub fn init_env(env: &mut Env) {
             let list = args[1].clone().try_into_list_or_vec()?;
             let mut new_list = Vec::with_capacity(list.len());
             for e in list.into_iter() {
-                new_list.push(eval(
-                    Value::List(vec![
-                        function.clone(),
-                        // prevent re-evaluation of args. Could probably be implemented in much a better way.
-                        // todo: add a fn call_fn_no_tco(v: Value) -> RuntimeResult<Value> that just calls a function without tco.
-                        Value::List(vec![Value::Symbol("quote".into()), e]),
-                    ]),
-                    env.clone(),
-                )?);
+                new_list.push(eval_fn_no_tco(function.clone(), vec![e], env.clone())?);
             }
             Ok(Value::List(new_list))
         }),
@@ -401,6 +392,41 @@ pub fn init_env(env: &mut Env) {
             let map = args[0].try_as_map()?;
             Ok(Value::List(map.values().cloned().collect()))
         }),
+    );
+
+    // TODO: time-ms, meta, with-meta, fn? string?, number?, seq, and conj
+
+    env.set(
+        "time-ms",
+        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+    );
+    env.set(
+        "meta",
+        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+    );
+    env.set(
+        "with-meta",
+        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+    );
+    env.set(
+        "fn?",
+        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+    );
+    env.set(
+        "string?",
+        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+    );
+    env.set(
+        "number?",
+        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+    );
+    env.set(
+        "seq",
+        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+    );
+    env.set(
+        "conj",
+        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
     );
 }
 

@@ -7,6 +7,8 @@ use std::{
     rc::Rc,
 };
 
+use rustyline::Editor;
+
 use crate::{
     env::Env,
     printer::pr_str,
@@ -34,6 +36,7 @@ pub enum HostFn {
     ByPtr(MalFnPtr),
     Eval(Rc<RefCell<Env>>),
     Apply,
+    ReadLine(Rc<RefCell<Editor<()>>>),
 }
 
 impl PartialEq for HostFn {

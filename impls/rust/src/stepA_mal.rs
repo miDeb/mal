@@ -1,4 +1,4 @@
-#![feature(bindings_after_at)]
+#![allow(non_snake_case)]
 
 use mal_core::init_env;
 use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
@@ -20,8 +20,8 @@ mod tokenize;
 mod value;
 
 fn main() {
-    let mut rl = Editor::<()>::new();
-    rl.load_history("history.txt").ok();
+    let rl = Rc::new(RefCell::new(Editor::<()>::new()));
+    rl.borrow_mut().load_history("history.txt").ok();
     let env = Rc::new(RefCell::new(Env::new(None)));
     eval(
         read("(def! not (fn* (a) (if a false true)))").unwrap(),
@@ -41,13 +41,18 @@ fn main() {
     )
     .unwrap();
     env.borrow_mut()
-        .set("eval".to_string(), Value::HostFn(HostFn::Eval(env.clone())));
+        .set("eval", Value::HostFn(HostFn::Eval(env.clone())));
+    env.borrow_mut()
+        .set("readline", Value::HostFn(HostFn::ReadLine(rl.clone())));
+
+    env.borrow_mut()
+        .set("*host-language*", Value::String("rust".into()));
 
     if let Some(file_name) = std::env::args().nth(1) {
         let argv = Value::List(std::env::args().skip(2).map(Value::String).collect());
         env.borrow_mut().set("*ARGV*", argv);
         match re(
-            format!(r#"(load-file "{}")"#, file_name.replace('"', r#"\""#)),
+            &format!(r#"(load-file "{}")"#, file_name.replace('"', r#"\""#)),
             &env,
         ) {
             Some(r) if r.is_err() => print(r),
@@ -59,18 +64,24 @@ fn main() {
     // we can't have any args if we reach this point, but *ARGV* must be present.
     env.borrow_mut().set("*ARGV*", Value::List(vec![]));
 
-    while let Ok(line) = rl.readline("user> ") {
-        rl.add_history_entry(&line);
-        if let Some(a) = re(line, &env) {
+    re(r#"(println (str "Mal [" *host-language* "]"))"#, &env);
+
+    while let Ok(line) = {
+        // required to drop the borrow
+        let mut b = rl.borrow_mut();
+        b.readline("user> ")
+    } {
+        rl.borrow_mut().add_history_entry(&line);
+        if let Some(a) = re(&line, &env) {
             print(a)
         }
         std::io::stdout().flush().unwrap();
     }
-    rl.save_history("history.txt").unwrap();
+    rl.borrow_mut().save_history("history.txt").unwrap();
 }
 
-fn re(line: String, env: &Rc<RefCell<Env>>) -> Option<RuntimeResult<Value>> {
-    match read(&line) {
+fn re(line: &str, env: &Rc<RefCell<Env>>) -> Option<RuntimeResult<Value>> {
+    match read(line) {
         Ok(value) => {
             let mut borrowed_env = env.borrow_mut();
             init_env(&mut borrowed_env);
@@ -233,6 +244,20 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                         let first = args.next().unwrap();
                         match first {
                             Value::HostFn(HostFn::Apply) => unreachable!(),
+                            Value::HostFn(HostFn::ReadLine(rl)) => {
+                                let mut rl = rl.borrow_mut();
+                                return match rl.readline(args.next().unwrap().try_as_str()?) {
+                                    Ok(mut string) => {
+                                        if string.ends_with('\n') {
+                                            string.pop();
+                                        }
+                                        rl.add_history_entry(&string);
+                                        drop(rl);
+                                        Ok(Value::String(string))
+                                    }
+                                    Err(_) => Ok(Value::Nil),
+                                };
+                            }
                             Value::HostFn(HostFn::Eval(eval_env)) => {
                                 env = eval_env;
                                 input = args.next().unwrap();
@@ -293,6 +318,52 @@ fn eval_ast(value: Value, env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
         }
         Value::Symbol(s) => Env::get(&env, &s),
         v => Ok(v),
+    }
+}
+
+/// evaluate a function. difference to the impl in eval: the impl in eval does tco and calls eval_ast on arguments.
+/// this fn is useful if we don't want to re-eval args with eval_ast.
+fn eval_fn_no_tco(
+    mut fun: Value,
+    mut args: Vec<Value>,
+    env: Rc<RefCell<Env>>,
+) -> RuntimeResult<Value> {
+    while matches!(&fun, Value::HostFn(HostFn::Apply)) {
+        fun = args.remove(0);
+        if args.len() > 1 {
+            match args.pop().unwrap() {
+                Value::Vec(l) | Value::List(l) => {
+                    args.extend(l.into_iter());
+                }
+                not_a_list => args.push(not_a_list),
+            }
+        }
+    }
+    let mut args = args.into_iter();
+    match fun {
+        Value::HostFn(HostFn::Apply) => unreachable!(),
+        Value::HostFn(HostFn::ReadLine(rl)) => {
+            match rl.borrow_mut().readline(args.next().unwrap().try_as_str()?) {
+                Ok(mut string) => {
+                    if string.ends_with('\n') {
+                        string.pop();
+                    }
+                    Ok(Value::String(string))
+                }
+                Err(_) => Ok(Value::Nil),
+            }
+        }
+        Value::HostFn(HostFn::Eval(eval_env)) => eval(args.next().unwrap(), eval_env),
+        Value::HostFn(HostFn::ByPtr(f)) => (f.0)(args.as_slice(), env),
+        Value::Closure(closure) => eval(
+            closure.ast.clone(),
+            Rc::new(RefCell::new(Env::new_with_binds(
+                Some(closure.env.clone()),
+                closure.params.clone().into_iter(),
+                args,
+            )?)),
+        ),
+        no_fun => Err(runtime_errors::not_a("function", &no_fun)),
     }
 }
 
