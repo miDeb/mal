@@ -1,4 +1,4 @@
-use std::{cell::RefCell, convert::TryInto, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, convert::TryInto, rc::Rc};
 
 use crate::{
     env::Env,
@@ -6,28 +6,19 @@ use crate::{
     printer::pr_str,
     reader::{read_str, ParseError},
     runtime_errors::{self, error_to_string_with_ctx, RuntimeResult},
-    value::{MalFunction, Value},
+    value::{HostFn, MalFnPtr, Value},
 };
 
 pub fn init_env(env: &mut Env) {
     fn make_fn_val(f: fn(&[Value], Rc<RefCell<Env>>) -> RuntimeResult<Value>) -> Value {
-        Value::Fn(MalFunction(f))
+        Value::HostFn(HostFn::ByPtr(MalFnPtr(f)))
     }
+    env.set("+", make_fn_val(|list, _| Ok(&list[0] + &list[1])));
+    env.set("-", make_fn_val(|list, _| Ok(&list[0] - &list[1])));
+    env.set("*", make_fn_val(|list, _| Ok(&list[0] * &list[1])));
+    env.set("/", make_fn_val(|list, _| &list[0] / &list[1]));
     env.set(
-        "+".to_string(),
-        make_fn_val(|list, _| Ok(&list[0] + &list[1])),
-    );
-    env.set(
-        "-".to_string(),
-        make_fn_val(|list, _| Ok(&list[0] - &list[1])),
-    );
-    env.set(
-        "*".to_string(),
-        make_fn_val(|list, _| Ok(&list[0] * &list[1])),
-    );
-    env.set("/".to_string(), make_fn_val(|list, _| &list[0] / &list[1]));
-    env.set(
-        "pr-str".to_string(),
+        "pr-str",
         make_fn_val(|list, _| {
             let mut string = String::new();
             for (i, item) in list.iter().enumerate() {
@@ -40,7 +31,7 @@ pub fn init_env(env: &mut Env) {
         }),
     );
     env.set(
-        "str".to_string(),
+        "str",
         make_fn_val(|list, _| {
             let mut string = String::new();
             for item in list.iter() {
@@ -50,7 +41,7 @@ pub fn init_env(env: &mut Env) {
         }),
     );
     env.set(
-        "prn".to_string(),
+        "prn",
         make_fn_val(|list, _| {
             let mut string = String::new();
             for (i, item) in list.iter().enumerate() {
@@ -64,7 +55,7 @@ pub fn init_env(env: &mut Env) {
         }),
     );
     env.set(
-        "println".to_string(),
+        "println",
         make_fn_val(|list, _| {
             let mut string = String::new();
             for (i, item) in list.iter().enumerate() {
@@ -78,15 +69,15 @@ pub fn init_env(env: &mut Env) {
         }),
     );
     env.set(
-        "list".to_string(),
+        "list",
         make_fn_val(|list, _| Ok(Value::List(list.to_vec()))),
     );
     env.set(
-        "list?".to_string(),
+        "list?",
         make_fn_val(|list, _| Ok(Value::Bool(matches!(list[0], Value::List(_))))),
     );
     env.set(
-        "empty?".to_string(),
+        "empty?",
         make_fn_val(|list, _| {
             Ok(Value::Bool(
                 list[0]
@@ -97,7 +88,7 @@ pub fn init_env(env: &mut Env) {
         }),
     );
     env.set(
-        "count".to_string(),
+        "count",
         make_fn_val(|list, _| {
             Ok(Value::Number(
                 list[0].try_as_list_or_vec().map(|l| l.len()).unwrap_or(0) as i32,
@@ -105,28 +96,28 @@ pub fn init_env(env: &mut Env) {
         }),
     );
     env.set(
-        "=".to_string(),
+        "=",
         make_fn_val(|list, _| Ok(Value::Bool(list[0] == list[1]))),
     );
     env.set(
-        "<".to_string(),
+        "<",
         make_fn_val(|list, _| Ok(Value::Bool(list[0] < list[1]))),
     );
     env.set(
-        ">".to_string(),
+        ">",
         make_fn_val(|list, _| Ok(Value::Bool(list[0] > list[1]))),
     );
     env.set(
-        "<=".to_string(),
+        "<=",
         make_fn_val(|list, _| Ok(Value::Bool(list[0] <= list[1]))),
     );
     env.set(
-        ">=".to_string(),
+        ">=",
         make_fn_val(|list, _| Ok(Value::Bool(list[0] >= list[1]))),
     );
 
     env.set(
-        "read-string".to_string(),
+        "read-string",
         make_fn_val(|list, _| match read_str(list[0].try_as_str()?) {
             Ok(v) => Ok(v),
             Err(ParseError::EmptyInput) => Ok(Value::Nil),
@@ -134,7 +125,7 @@ pub fn init_env(env: &mut Env) {
         }),
     );
     env.set(
-        "slurp".to_string(),
+        "slurp",
         make_fn_val(|list, _| {
             let file = list[0].try_as_str()?;
             std::fs::read_to_string(file)
@@ -149,22 +140,22 @@ pub fn init_env(env: &mut Env) {
     );
 
     env.set(
-        "atom".to_string(),
+        "atom",
         make_fn_val(|list, _| Ok(Value::Atom(Rc::new(RefCell::new(list[0].clone()))))),
     );
     env.set(
-        "atom?".to_string(),
+        "atom?",
         make_fn_val(|list, _| Ok(Value::Bool(matches!(list[0], Value::Atom(_))))),
     );
     env.set(
-        "deref".to_string(),
+        "deref",
         make_fn_val(|list, _| match &list[0] {
             Value::Atom(v) => Ok(v.borrow().clone()),
             v => Err(runtime_errors::not_a("atom", v)),
         }),
     );
     env.set(
-        "reset!".to_string(),
+        "reset!",
         make_fn_val(|list, _| match &list[0] {
             Value::Atom(v) => {
                 v.replace(list[1].clone());
@@ -174,7 +165,7 @@ pub fn init_env(env: &mut Env) {
         }),
     );
     env.set(
-        "swap!".to_string(),
+        "swap!",
         make_fn_val(|list, env| match &list[0] {
             Value::Atom(v) => {
                 let mut fn_args = vec![list[1].clone(), v.borrow().clone()];
@@ -189,33 +180,33 @@ pub fn init_env(env: &mut Env) {
     );
 
     env.set(
-        "cons".to_string(),
+        "cons",
         make_fn_val(|args, _| {
-            let mut list = args[1].clone().try_into_list_or_vec().unwrap();
+            let mut list = args[1].clone().try_into_list_or_vec()?;
             list.insert(0, args[0].clone());
             Ok(Value::List(list))
         }),
     );
     env.set(
-        "concat".to_string(),
+        "concat",
         make_fn_val(|args, _| {
             let mut list = Vec::new();
             for arg in args {
-                list.append(&mut arg.clone().try_into_list_or_vec().unwrap());
+                list.append(&mut arg.clone().try_into_list_or_vec()?);
             }
             Ok(Value::List(list))
         }),
     );
 
     env.set(
-        "vec".to_string(),
-        make_fn_val(|args, _| Ok(Value::Vec(args[0].clone().try_into_list_or_vec().unwrap()))),
+        "vec",
+        make_fn_val(|args, _| Ok(Value::Vec(args[0].clone().try_into_list_or_vec()?))),
     );
 
     env.set(
-        "nth".to_string(),
+        "nth",
         make_fn_val(|args, _| match &args[0] {
-            Value::List(l) | Value::Vec(l) if !l.is_empty() => {
+            Value::List(l) | Value::Vec(l) => {
                 let index_unconverted: i32 = args[1].try_as_number().unwrap();
                 let index: usize = index_unconverted
                     .try_into()
@@ -225,12 +216,12 @@ pub fn init_env(env: &mut Env) {
                     .ok_or_else(|| runtime_errors::out_of_bounds(l.len(), index_unconverted))?
                     .clone())
             }
-            Value::List(_) | Value::Vec(_) | Value::Nil => Ok(Value::Nil),
+            Value::Nil => Ok(Value::Nil),
             v => Err(runtime_errors::not_a("list", v)),
         }),
     );
     env.set(
-        "first".to_string(),
+        "first",
         make_fn_val(|args, _| match &args[0] {
             Value::List(l) | Value::Vec(l) if !l.is_empty() => Ok(l[0].clone()),
             Value::List(_) | Value::Vec(_) | Value::Nil => Ok(Value::Nil),
@@ -238,15 +229,188 @@ pub fn init_env(env: &mut Env) {
         }),
     );
     env.set(
-        "rest".to_string(),
+        "rest",
         make_fn_val(|args, _| match &args[0] {
             Value::List(l) | Value::Vec(l) if !l.is_empty() => Ok(Value::List(l[1..].to_vec())),
             Value::List(_) | Value::Vec(_) | Value::Nil => Ok(Value::List(Vec::new())),
             v => Err(runtime_errors::not_a("list", v)),
         }),
     );
+    env.set("throw", make_fn_val(|args, _| Err(args[0].clone())));
+
+    env.set("apply", Value::HostFn(HostFn::Apply));
     env.set(
-        "throw".to_string(),
-        make_fn_val(|args, _| Err(args[0].clone())),
+        "map",
+        make_fn_val(|args, env| {
+            let function = args[0].clone();
+            let list = args[1].clone().try_into_list_or_vec()?;
+            let mut new_list = Vec::with_capacity(list.len());
+            for e in list.into_iter() {
+                new_list.push(eval(
+                    Value::List(vec![
+                        function.clone(),
+                        // prevent re-evaluation of args. Could probably be implemented in much a better way.
+                        // todo: add a fn call_fn_no_tco(v: Value) -> RuntimeResult<Value> that just calls a function without tco.
+                        Value::List(vec![Value::Symbol("quote".into()), e]),
+                    ]),
+                    env.clone(),
+                )?);
+            }
+            Ok(Value::List(new_list))
+        }),
     );
+
+    env.set(
+        "nil?",
+        make_fn_val(|args, _| Ok(Value::Bool(matches!(&args[0], Value::Nil)))),
+    );
+    env.set(
+        "true?",
+        make_fn_val(|args, _| Ok(Value::Bool(matches!(&args[0], Value::Bool(true))))),
+    );
+    env.set(
+        "false?",
+        make_fn_val(|args, _| Ok(Value::Bool(matches!(&args[0], Value::Bool(false))))),
+    );
+    env.set(
+        "symbol?",
+        make_fn_val(|args, _| Ok(Value::Bool(matches!(&args[0], Value::Symbol(_))))),
+    );
+    env.set(
+        "symbol",
+        make_fn_val(|args, _| Ok(Value::Symbol(args[0].try_as_str()?.to_string()))),
+    );
+    env.set(
+        "keyword",
+        make_fn_val(|args, _| match &args[0] {
+            Value::String(s) => Ok(Value::Keyword(format!(
+                "{}:{}",
+                char::from_u32(0x29E).unwrap(),
+                s.to_string()
+            ))),
+            v @ Value::Keyword(_) => Ok(v.clone()),
+            v => Err(runtime_errors::not_a("string or keyword", v)),
+        }),
+    );
+    env.set(
+        "keyword?",
+        make_fn_val(|args, _| Ok(Value::Bool(matches!(&args[0], Value::Keyword(_))))),
+    );
+    env.set(
+        "vector",
+        make_fn_val(|list, _| Ok(Value::Vec(list.to_vec()))),
+    );
+    env.set(
+        "vector?",
+        make_fn_val(|args, _| Ok(Value::Bool(matches!(&args[0], Value::Vec(_))))),
+    );
+    env.set(
+        "sequential?",
+        make_fn_val(|args, _| {
+            Ok(Value::Bool(matches!(
+                &args[0],
+                Value::Vec(_) | Value::List(_)
+            )))
+        }),
+    );
+    env.set(
+        "hash-map",
+        make_fn_val(|args, _| {
+            let mut map = HashMap::new();
+            let mut args = args.iter();
+            ensure_even_args(&args)?;
+            while let Some(v) = args.next() {
+                map.insert(
+                    v.as_hash_map_key()?.to_owned(),
+                    args.next().unwrap().clone(),
+                );
+            }
+            Ok(Value::Map(map))
+        }),
+    );
+    env.set(
+        "map?",
+        make_fn_val(|args, _| Ok(Value::Bool(matches!(&args[0], Value::Map(_))))),
+    );
+    env.set(
+        "assoc",
+        make_fn_val(|args, _| {
+            let mut map = args[0].try_as_map()?.clone();
+            let mut args = args.iter().skip(1);
+            ensure_even_args(&args)?;
+            while let Some(v) = args.next() {
+                map.insert(
+                    v.as_hash_map_key()?.to_owned(),
+                    args.next().unwrap().clone(),
+                );
+            }
+            Ok(Value::Map(map))
+        }),
+    );
+    env.set(
+        "dissoc",
+        make_fn_val(|args, _| {
+            let mut map = args[0].try_as_map()?.clone();
+            for arg in args.iter().skip(1) {
+                map.remove(arg.as_hash_map_key()?);
+            }
+            Ok(Value::Map(map))
+        }),
+    );
+    env.set(
+        "get",
+        make_fn_val(|args, _| {
+            // TODO: should we just consider Nil to be an empty map in try_as map?
+            if matches!(&args[0], Value::Nil) {
+                return Ok(Value::Nil);
+            }
+            let map = args[0].try_as_map()?;
+            Ok(map
+                .get(args[1].as_hash_map_key()?)
+                .cloned()
+                .unwrap_or(Value::Nil))
+        }),
+    );
+    env.set(
+        "contains?",
+        make_fn_val(|args, _| {
+            let map = args[0].try_as_map()?;
+            Ok(Value::Bool(map.contains_key(args[1].as_hash_map_key()?)))
+        }),
+    );
+    env.set(
+        "keys",
+        make_fn_val(|args, _| {
+            let map = args[0].try_as_map()?;
+            Ok(Value::List(
+                map.keys()
+                    .map(|v| {
+                        if v.starts_with(char::from_u32(0x29E).unwrap()) {
+                            Value::Keyword(v.clone())
+                        } else {
+                            Value::String(v.clone())
+                        }
+                    })
+                    .collect(),
+            ))
+        }),
+    );
+    env.set(
+        "vals",
+        make_fn_val(|args, _| {
+            let map = args[0].try_as_map()?;
+            Ok(Value::List(map.values().cloned().collect()))
+        }),
+    );
+}
+
+fn ensure_even_args(args: &impl ExactSizeIterator) -> RuntimeResult<()> {
+    if args.len() % 2 != 0 {
+        Err(runtime_errors::error_to_string(format!(
+            "expected an even number of arguments, got {}",
+            args.len()
+        )))
+    } else {
+        Ok(())
+    }
 }

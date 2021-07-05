@@ -21,14 +21,33 @@ pub struct Closure {
 }
 
 #[derive(Clone)]
-pub struct MalFunction(pub fn(&[Value], Rc<RefCell<Env>>) -> RuntimeResult<Value>);
+pub struct MalFnPtr(pub fn(&[Value], Rc<RefCell<Env>>) -> RuntimeResult<Value>);
 
-impl fmt::Debug for MalFunction {
-    // Workaround since debug can't be derived for this fn signature.
+impl fmt::Debug for MalFnPtr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Pointer::fmt(&(self.0 as *const ()), f)
     }
 }
+
+#[derive(Clone, Debug)]
+pub enum HostFn {
+    ByPtr(MalFnPtr),
+    Eval(Rc<RefCell<Env>>),
+    Apply,
+}
+
+impl PartialEq for HostFn {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (HostFn::ByPtr(a), HostFn::ByPtr(b)) => std::ptr::eq(&a, &b),
+            (HostFn::Eval(_), HostFn::Eval(_)) => true,
+            (HostFn::Apply, HostFn::Apply) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for HostFn {}
 
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -39,9 +58,8 @@ pub enum Value {
     Symbol(String),
     Keyword(String),
     String(String),
-    Fn(MalFunction),
+    HostFn(HostFn),
     Closure(Rc<Closure>),
-    Eval(Rc<RefCell<Env>>),
     Nil,
     Bool(bool),
     Atom(Rc<RefCell<Value>>),
@@ -52,6 +70,12 @@ impl Value {
         match self {
             Value::Keyword(s) | Value::String(s) => Ok(s),
             _ => Err(self),
+        }
+    }
+    pub fn as_hash_map_key(&self) -> RuntimeResult<&str> {
+        match self {
+            Value::Keyword(s) | Value::String(s) => Ok(s),
+            v => Err(runtime_errors::not_a("hash map key (keyword or string)", v)),
         }
     }
     pub fn try_into_env_map_key(self) -> RuntimeResult<String> {
@@ -73,10 +97,10 @@ impl Value {
             _ => None,
         }
     }
-    pub fn try_into_list_or_vec(self) -> Option<Vec<Value>> {
+    pub fn try_into_list_or_vec(self) -> RuntimeResult<Vec<Value>> {
         match self {
-            Value::List(l) | Value::Vec(l) => Some(l),
-            _ => None,
+            Value::List(l) | Value::Vec(l) => Ok(l),
+            v => Err(runtime_errors::not_a("list or vec", &v)),
         }
     }
     pub fn value_to_string(&self, readably: bool) -> String {
@@ -94,6 +118,12 @@ impl Value {
         match self {
             Value::Number(n) => Some(*n),
             _ => None,
+        }
+    }
+    pub fn try_as_map(&self) -> RuntimeResult<&HashMap<String, Value>> {
+        match self {
+            Value::Map(m) => Ok(m),
+            v => Err(runtime_errors::not_a("hash map", v)),
         }
     }
     fn deref_atom_recursively(&self) -> Self {
@@ -180,12 +210,11 @@ impl PartialEq for Value {
             (Value::Symbol(a), Value::Symbol(b)) => a == b,
             (Value::Keyword(a), Value::Keyword(b)) => a == b,
             (Value::String(a), Value::String(b)) => a == b,
-            (Value::Fn(a), Value::Fn(b)) => std::ptr::eq(&a, &b),
+            (Value::HostFn(a), Value::HostFn(b)) => a == b,
             (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(&a, &b),
             (Value::Number(a), Value::Number(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,
-            (Value::Eval(_), Value::Eval(_)) => true,
             _ => false,
         }
     }

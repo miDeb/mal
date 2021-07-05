@@ -7,7 +7,7 @@ use env::Env;
 use reader::{ParseError, ParseResult};
 use runtime_errors::RuntimeResult;
 use rustyline::Editor;
-use value::Value;
+use value::{HostFn, Value};
 
 use crate::value::Closure;
 
@@ -41,7 +41,7 @@ fn main() {
     )
     .unwrap();
     env.borrow_mut()
-        .set("eval".to_string(), Value::Eval(env.clone()));
+        .set("eval".to_string(), Value::HostFn(HostFn::Eval(env.clone())));
 
     if let Some(file_name) = std::env::args().nth(1) {
         let argv = Value::List(std::env::args().skip(2).map(Value::String).collect());
@@ -112,8 +112,7 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                         let mut bindings_iter = args_iter
                             .next()
                             .unwrap()
-                            .try_into_list_or_vec()
-                            .unwrap()
+                            .try_into_list_or_vec()?
                             .into_iter();
                         while let Some(key) = bindings_iter.next() {
                             let value = eval(bindings_iter.next().unwrap(), new_env.clone())?;
@@ -152,7 +151,7 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                     Value::Symbol(n) if n == "fn*" => {
                         let mut iter = l.into_iter();
                         let env = env;
-                        let params = iter.nth(1).unwrap().try_into_list_or_vec().unwrap();
+                        let params = iter.nth(1).unwrap().try_into_list_or_vec()?;
                         let ast = iter.next().unwrap();
                         Ok(Value::Closure(Rc::new(Closure {
                             ast,
@@ -199,31 +198,47 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                         match result {
                             Ok(value) => return Ok(value),
                             Err(err) => {
-                                let mut catch_block =
-                                    args.next().unwrap().into_list().into_iter().skip(1);
-                                let bind_error_to = catch_block.next().unwrap();
-                                let to_eval = catch_block.next().unwrap();
-                                input = to_eval;
-                                env = Rc::new(RefCell::new(Env::new_with_binds(
-                                    Some(env),
-                                    std::iter::once(bind_error_to),
-                                    std::iter::once(err),
-                                )?));
-                                continue;
+                                if let Some(catch_block) = args.next() {
+                                    let mut catch_block =
+                                        catch_block.into_list().into_iter().skip(1);
+                                    let bind_error_to = catch_block.next().unwrap();
+                                    let to_eval = catch_block.next().unwrap();
+                                    input = to_eval;
+                                    env = Rc::new(RefCell::new(Env::new_with_binds(
+                                        Some(env),
+                                        std::iter::once(bind_error_to),
+                                        std::iter::once(err),
+                                    )?));
+                                    continue;
+                                } else {
+                                    return Err(err);
+                                }
                             }
                         }
                     }
                     _ => {
-                        let new_list = eval_ast(Value::List(l), env.clone())?.into_list();
+                        let mut new_list = eval_ast(Value::List(l), env.clone())?.into_list();
+                        while matches!(&new_list[0], Value::HostFn(HostFn::Apply)) {
+                            new_list.remove(0);
+                            if new_list.len() > 1 {
+                                match new_list.pop().unwrap() {
+                                    Value::Vec(l) | Value::List(l) => {
+                                        new_list.extend(l.into_iter());
+                                    }
+                                    not_a_list => new_list.push(not_a_list),
+                                }
+                            }
+                        }
                         let mut args = new_list.into_iter();
                         let first = args.next().unwrap();
                         match first {
-                            Value::Eval(eval_env) => {
+                            Value::HostFn(HostFn::Apply) => unreachable!(),
+                            Value::HostFn(HostFn::Eval(eval_env)) => {
                                 env = eval_env;
                                 input = args.next().unwrap();
                                 continue;
                             }
-                            Value::Fn(f) => (f.0)(args.as_slice(), env),
+                            Value::HostFn(HostFn::ByPtr(f)) => (f.0)(args.as_slice(), env),
                             Value::Closure(closure) => {
                                 input = closure.ast.clone();
                                 env = Rc::new(RefCell::new(Env::new_with_binds(
@@ -248,7 +263,7 @@ fn print(value: RuntimeResult<Value>) {
         Ok(value) => {
             println!("{}", value);
         }
-        Err(e) => eprintln!("{}", e),
+        Err(e) => eprintln!("ERROR: {}", e),
     }
 }
 

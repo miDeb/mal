@@ -54,7 +54,7 @@ impl Env {
 
     pub fn get(env: &Rc<RefCell<Env>>, key: &str) -> RuntimeResult<Value> {
         Ok(Self::find(env, key)
-            .ok_or_else(|| runtime_errors::error_to_string(format!("{} not found", key)))?
+            .ok_or_else(|| runtime_errors::error_to_string(format!("'{}' not found", key)))?
             .as_ref()
             .borrow()
             .data
