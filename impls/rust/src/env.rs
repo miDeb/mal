@@ -1,17 +1,19 @@
+use rustc_hash::FxHashMap;
+
 use crate::runtime_errors::{self, RuntimeResult};
 use crate::Value;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 #[derive(Debug)]
 pub struct Env {
-    pub data: HashMap<String, Value>,
+    pub data: FxHashMap<String, Value>,
     outer: Option<Rc<RefCell<Env>>>,
 }
 
 impl Env {
     pub fn new(outer: Option<Rc<RefCell<Env>>>) -> Self {
         Self {
-            data: HashMap::new(),
+            data: FxHashMap::default(),
             outer,
         }
     }
@@ -23,7 +25,7 @@ impl Env {
     ) -> RuntimeResult<Self> {
         let mut env = Self {
             outer,
-            data: HashMap::new(),
+            data: FxHashMap::default(),
         };
         while let Some(key) = binds.next() {
             if matches!(&key, Value::Symbol(s) if s == "&") {

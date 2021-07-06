@@ -1,8 +1,9 @@
 use std::{
     cell::RefCell,
-    collections::HashMap,
     fmt::{Display, Write},
 };
+
+use rustc_hash::FxHashMap;
 
 use crate::value::Value;
 
@@ -56,7 +57,7 @@ fn write_list(f: &mut impl Write, list: &[Value], readably: bool) -> std::fmt::R
     Ok(())
 }
 
-fn write_map(f: &mut impl Write, map: &HashMap<String, Value>, readably: bool) -> std::fmt::Result {
+fn write_map(f: &mut impl Write, map: &FxHashMap<String, Value>, readably: bool) -> std::fmt::Result {
     write!(f, "{{")?;
     for (i, (key, value)) in map.iter().enumerate() {
         if i != 0 {

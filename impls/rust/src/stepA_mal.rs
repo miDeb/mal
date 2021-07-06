@@ -1,7 +1,8 @@
 #![allow(non_snake_case)]
 
+use rustc_hash::FxHashMap;
 use mal_core::init_env;
-use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
+use std::{cell::RefCell, io::Write, rc::Rc};
 
 use env::Env;
 use reader::{ParseError, ParseResult};
@@ -321,7 +322,7 @@ fn eval_ast(value: Value, env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
             Ok(Value::Vec(new_vec, meta))
         }
         Value::Map(map, meta) => {
-            let mut new_map = HashMap::with_capacity(map.len());
+            let mut new_map = FxHashMap::default();
             for (k, v) in map {
                 new_map.insert(k, eval(v, env.clone())?);
             }

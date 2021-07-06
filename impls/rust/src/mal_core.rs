@@ -1,4 +1,6 @@
-use std::{cell::RefCell, collections::HashMap, convert::TryInto, rc::Rc};
+use std::{cell::RefCell, convert::TryInto, rc::Rc};
+
+use rustc_hash::FxHashMap;
 
 use crate::{
     env::Env,
@@ -167,11 +169,7 @@ pub fn init_env(env: &mut Env) {
 
     env.set(
         "atom",
-        make_fn_val(|mut args, _| {
-            Ok(Value::Atom(Rc::new(RefCell::new(
-                args.next().unwrap(),
-            ))))
-        }),
+        make_fn_val(|mut args, _| Ok(Value::Atom(Rc::new(RefCell::new(args.next().unwrap()))))),
     );
     env.set(
         "atom?",
@@ -384,13 +382,10 @@ pub fn init_env(env: &mut Env) {
     env.set(
         "hash-map",
         make_fn_val(|mut args, _| {
-            let mut map = HashMap::new();
+            let mut map = FxHashMap::default();
             ensure_even_args(&args)?;
             while let Some(v) = args.next() {
-                map.insert(
-                    v.as_hash_map_key()?.to_owned(),
-                    args.next().unwrap(),
-                );
+                map.insert(v.as_hash_map_key()?.to_owned(), args.next().unwrap());
             }
             Ok(Value::Map(map, Box::new(Value::Nil)))
         }),
@@ -410,10 +405,7 @@ pub fn init_env(env: &mut Env) {
             let mut map = args.next().unwrap().try_into_map()?;
             ensure_even_args(&args)?;
             while let Some(v) = args.next() {
-                map.insert(
-                    v.as_hash_map_key()?.to_owned(),
-                    args.next().unwrap(),
-                );
+                map.insert(v.as_hash_map_key()?.to_owned(), args.next().unwrap());
             }
             Ok(Value::Map(map, Box::new(Value::Nil)))
         }),
@@ -575,9 +567,7 @@ pub fn init_env(env: &mut Env) {
             Value::List(l, _) | Value::Vec(l, _) if l.is_empty() => Ok(Value::Nil),
             Value::String(s) if s.is_empty() => Ok(Value::Nil),
             Value::Nil => Ok(Value::Nil),
-            Value::List(l, _) | Value::Vec(l, _) => {
-                Ok(Value::List(l, Box::new(Value::Nil)))
-            }
+            Value::List(l, _) | Value::Vec(l, _) => Ok(Value::List(l, Box::new(Value::Nil))),
             Value::String(s) => Ok(Value::List(
                 s.chars().map(|c| Value::String(c.into())).collect(),
                 Box::new(Value::Nil),

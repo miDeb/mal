@@ -1,4 +1,6 @@
-use std::{collections::HashMap, fmt::Display};
+use std::fmt::Display;
+
+use rustc_hash::FxHashMap;
 
 use crate::{
     tokenize::{Token, Tokenizer},
@@ -131,9 +133,9 @@ impl<'a> Reader<'a> {
         Ok(values)
     }
 
-    fn read_map(&mut self) -> ParseResult<HashMap<String, Value>> {
+    fn read_map(&mut self) -> ParseResult<FxHashMap<String, Value>> {
         self.next()?;
-        let mut map = HashMap::new();
+        let mut map = FxHashMap::default();
         while self.peek()? != &Token::RightBrace {
             map.insert(
                 self.read_form()?

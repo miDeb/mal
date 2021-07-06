@@ -1,12 +1,12 @@
 use std::{
     cell::RefCell,
     cmp::Ordering,
-    collections::HashMap,
     fmt,
     ops::{Add, Div, Mul, Sub},
     rc::Rc,
 };
 
+use rustc_hash::FxHashMap;
 use rustyline::Editor;
 
 use crate::{
@@ -57,7 +57,7 @@ pub type Meta = Box<Value>;
 pub enum Value {
     List(Vec<Value>, Meta),
     Vec(Vec<Value>, Meta),
-    Map(HashMap<String, Value>, Meta),
+    Map(FxHashMap<String, Value>, Meta),
     Number(i32),
     Symbol(String),
     Keyword(String),
@@ -130,13 +130,13 @@ impl Value {
             _ => None,
         }
     }
-    /*pub fn try_as_map(&self) -> RuntimeResult<&HashMap<String, Value>> {
+    /*pub fn try_as_map(&self) -> RuntimeResult<&FxHashMap<String, Value>> {
         match self {
             Value::Map(m, _) => Ok(m),
             v => Err(runtime_errors::not_a("hash map", v)),
         }
     }*/
-    pub fn try_into_map(self) -> RuntimeResult<HashMap<String, Value>> {
+    pub fn try_into_map(self) -> RuntimeResult<FxHashMap<String, Value>> {
         match self {
             Value::Map(m, _) => Ok(m),
             v => Err(runtime_errors::not_a("hash map", &v)),
