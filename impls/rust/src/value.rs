@@ -11,7 +11,6 @@ use rustyline::Editor;
 
 use crate::{
     env::Env,
-    printer::pr_str,
     runtime_errors::{self, RuntimeResult},
 };
 #[derive(Clone, Debug)]
@@ -23,7 +22,7 @@ pub struct Closure {
 }
 
 #[derive(Clone)]
-pub struct MalFnPtr(pub fn(&[Value], Rc<RefCell<Env>>) -> RuntimeResult<Value>);
+pub struct MalFnPtr(pub fn(std::vec::IntoIter<Value>, Rc<RefCell<Env>>) -> RuntimeResult<Value>);
 
 impl fmt::Debug for MalFnPtr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -108,15 +107,21 @@ impl Value {
             v => Err(runtime_errors::not_a("list or vec", &v)),
         }
     }
-    pub fn value_to_string(&self, readably: bool) -> String {
+    /*pub fn value_to_string(&self, readably: bool) -> String {
         let mut buf = String::new();
         pr_str(self, &mut buf, readably).unwrap();
         buf
-    }
+    }*/
     pub fn try_as_str(&self) -> RuntimeResult<&str> {
         match self {
             Value::String(str) => Ok(str),
             v => Err(runtime_errors::not_a("string", v)),
+        }
+    }
+    pub fn try_into_string(self) -> RuntimeResult<String> {
+        match self {
+            Value::String(str) => Ok(str),
+            v => Err(runtime_errors::not_a("string", &v)),
         }
     }
     pub fn try_as_number(&self) -> Option<i32> {
@@ -125,22 +130,27 @@ impl Value {
             _ => None,
         }
     }
-    pub fn try_as_map(&self) -> RuntimeResult<&HashMap<String, Value>> {
+    /*pub fn try_as_map(&self) -> RuntimeResult<&HashMap<String, Value>> {
         match self {
             Value::Map(m, _) => Ok(m),
             v => Err(runtime_errors::not_a("hash map", v)),
         }
-    }
-    fn deref_atom_recursively(&self) -> Self {
-        let mut curr = self.clone();
-        while let Value::Atom(v) = curr {
-            curr = v.borrow().clone();
+    }*/
+    pub fn try_into_map(self) -> RuntimeResult<HashMap<String, Value>> {
+        match self {
+            Value::Map(m, _) => Ok(m),
+            v => Err(runtime_errors::not_a("hash map", &v)),
         }
-        curr
+    }
+    fn deref_atom_recursively(mut self) -> Self {
+        while let Value::Atom(v) = self {
+            self = v.borrow().clone();
+        }
+        self
     }
 }
 
-impl Add for &Value {
+impl Add for Value {
     type Output = Value;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -150,7 +160,7 @@ impl Add for &Value {
         }
     }
 }
-impl Sub for &Value {
+impl Sub for Value {
     type Output = Value;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -160,7 +170,7 @@ impl Sub for &Value {
         }
     }
 }
-impl Mul for &Value {
+impl Mul for Value {
     type Output = Value;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -170,7 +180,7 @@ impl Mul for &Value {
         }
     }
 }
-impl Div for &Value {
+impl Div for Value {
     type Output = RuntimeResult<Value>;
 
     fn div(self, rhs: Self) -> Self::Output {
@@ -204,8 +214,8 @@ impl Ord for Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (
-            self.deref_atom_recursively(),
-            other.deref_atom_recursively(),
+            self.clone().deref_atom_recursively(),
+            other.clone().deref_atom_recursively(),
         ) {
             (Value::List(a, _), Value::List(b, _))
             | (Value::Vec(a, _), Value::Vec(b, _))

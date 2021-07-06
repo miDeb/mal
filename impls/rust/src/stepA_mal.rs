@@ -274,7 +274,7 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                                 input = args.next().unwrap();
                                 continue;
                             }
-                            Value::HostFn(HostFn::ByPtr(f), _) => (f.0)(args.as_slice(), env),
+                            Value::HostFn(HostFn::ByPtr(f), _) => (f.0)(args, env),
                             Value::Closure(closure, _) => {
                                 input = closure.ast.clone();
                                 env = Rc::new(RefCell::new(Env::new_with_binds(
@@ -365,7 +365,7 @@ fn eval_fn_no_tco(
             }
         }
         Value::HostFn(HostFn::Eval(eval_env), _) => eval(args.next().unwrap(), eval_env),
-        Value::HostFn(HostFn::ByPtr(f), _) => (f.0)(args.as_slice(), env),
+        Value::HostFn(HostFn::ByPtr(f), _) => (f.0)(args, env),
         Value::Closure(closure, _) => eval(
             closure.ast.clone(),
             Rc::new(RefCell::new(Env::new_with_binds(
