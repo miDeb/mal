@@ -16,12 +16,12 @@ pub fn pr_str(value: &Value, f: &mut impl Write, readably: bool) -> std::fmt::Re
     match value {
         Value::Number(n) => write!(f, "{}", n),
         Value::Symbol(name) => write!(f, "{}", name),
-        Value::List(list) => {
+        Value::List(list, _) => {
             write!(f, "(")?;
             write_list(f, list, readably)?;
             write!(f, ")")
         }
-        Value::Vec(list) => {
+        Value::Vec(list, _) => {
             write!(f, "[")?;
             write_list(f, list, readably)?;
             write!(f, "]")
@@ -38,8 +38,8 @@ pub fn pr_str(value: &Value, f: &mut impl Write, readably: bool) -> std::fmt::Re
                 write!(f, "{}", value)
             }
         }
-        Value::Map(map) => write_map(f, map, readably),
-        Value::HostFn(_) | Value::Closure(_) => write!(f, "#<function>"),
+        Value::Map(map, _) => write_map(f, map, readably),
+        Value::HostFn(_, _) | Value::Closure(_, _) => write!(f, "#<function>"),
         Value::Nil => write!(f, "nil"),
         Value::Bool(b) => write!(f, "{}", b),
         Value::Atom(atom) => write!(f, "(atom {})", RefCell::borrow(atom)),

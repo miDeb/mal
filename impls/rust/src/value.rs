@@ -52,17 +52,19 @@ impl PartialEq for HostFn {
 
 impl Eq for HostFn {}
 
+pub type Meta = Box<Value>;
+
 #[derive(Clone, Debug)]
 pub enum Value {
-    List(Vec<Value>),
-    Vec(Vec<Value>),
-    Map(HashMap<String, Value>),
+    List(Vec<Value>, Meta),
+    Vec(Vec<Value>, Meta),
+    Map(HashMap<String, Value>, Meta),
     Number(i32),
     Symbol(String),
     Keyword(String),
     String(String),
-    HostFn(HostFn),
-    Closure(Rc<Closure>),
+    HostFn(HostFn, Meta),
+    Closure(Rc<Closure>, Meta),
     Nil,
     Bool(bool),
     Atom(Rc<RefCell<Value>>),
@@ -90,19 +92,19 @@ impl Value {
 
     pub fn into_list(self) -> Vec<Value> {
         match self {
-            Value::List(l) => l,
+            Value::List(l, _) => l,
             _ => unreachable!(),
         }
     }
     pub fn try_as_list_or_vec(&self) -> Option<&[Value]> {
         match self {
-            Value::List(l) | Value::Vec(l) => Some(l),
+            Value::List(l, _) | Value::Vec(l, _) => Some(l),
             _ => None,
         }
     }
     pub fn try_into_list_or_vec(self) -> RuntimeResult<Vec<Value>> {
         match self {
-            Value::List(l) | Value::Vec(l) => Ok(l),
+            Value::List(l, _) | Value::Vec(l, _) => Ok(l),
             v => Err(runtime_errors::not_a("list or vec", &v)),
         }
     }
@@ -125,7 +127,7 @@ impl Value {
     }
     pub fn try_as_map(&self) -> RuntimeResult<&HashMap<String, Value>> {
         match self {
-            Value::Map(m) => Ok(m),
+            Value::Map(m, _) => Ok(m),
             v => Err(runtime_errors::not_a("hash map", v)),
         }
     }
@@ -205,16 +207,16 @@ impl PartialEq for Value {
             self.deref_atom_recursively(),
             other.deref_atom_recursively(),
         ) {
-            (Value::List(a), Value::List(b))
-            | (Value::Vec(a), Value::Vec(b))
-            | (Value::List(a), Value::Vec(b))
-            | (Value::Vec(a), Value::List(b)) => a == b,
-            (Value::Map(a), Value::Map(b)) => a == b,
+            (Value::List(a, _), Value::List(b, _))
+            | (Value::Vec(a, _), Value::Vec(b, _))
+            | (Value::List(a, _), Value::Vec(b, _))
+            | (Value::Vec(a, _), Value::List(b, _)) => a == b,
+            (Value::Map(a, _), Value::Map(b, _)) => a == b,
             (Value::Symbol(a), Value::Symbol(b)) => a == b,
             (Value::Keyword(a), Value::Keyword(b)) => a == b,
             (Value::String(a), Value::String(b)) => a == b,
-            (Value::HostFn(a), Value::HostFn(b)) => a == b,
-            (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(&a, &b),
+            (Value::HostFn(a, _), Value::HostFn(b, _)) => a == b,
+            (Value::Closure(a, _), Value::Closure(b, _)) => Rc::ptr_eq(&a, &b),
             (Value::Number(a), Value::Number(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,

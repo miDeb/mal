@@ -29,7 +29,10 @@ impl Env {
             if matches!(&key, Value::Symbol(s) if s == "&") {
                 let key = binds.next().unwrap();
                 let values = exprs.collect();
-                env.set(key.try_into_env_map_key()?, Value::List(values));
+                env.set(
+                    key.try_into_env_map_key()?,
+                    Value::List(values, Box::new(Value::Nil)),
+                );
                 break;
             } else {
                 env.set(key.try_into_env_map_key()?, exprs.next().unwrap())

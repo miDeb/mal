@@ -40,16 +40,23 @@ fn main() {
         env.clone(),
     )
     .unwrap();
-    env.borrow_mut()
-        .set("eval", Value::HostFn(HostFn::Eval(env.clone())));
-    env.borrow_mut()
-        .set("readline", Value::HostFn(HostFn::ReadLine(rl.clone())));
+    env.borrow_mut().set(
+        "eval",
+        Value::HostFn(HostFn::Eval(env.clone()), Box::new(Value::Nil)),
+    );
+    env.borrow_mut().set(
+        "readline",
+        Value::HostFn(HostFn::ReadLine(rl.clone()), Box::new(Value::Nil)),
+    );
 
     env.borrow_mut()
         .set("*host-language*", Value::String("rust".into()));
 
     if let Some(file_name) = std::env::args().nth(1) {
-        let argv = Value::List(std::env::args().skip(2).map(Value::String).collect());
+        let argv = Value::List(
+            std::env::args().skip(2).map(Value::String).collect(),
+            Box::new(Value::Nil),
+        );
         env.borrow_mut().set("*ARGV*", argv);
         match re(
             &format!(r#"(load-file "{}")"#, file_name.replace('"', r#"\""#)),
@@ -62,7 +69,8 @@ fn main() {
         return;
     }
     // we can't have any args if we reach this point, but *ARGV* must be present.
-    env.borrow_mut().set("*ARGV*", Value::List(vec![]));
+    env.borrow_mut()
+        .set("*ARGV*", Value::List(vec![], Box::new(Value::Nil)));
 
     re(r#"(println (str "Mal [" *host-language* "]"))"#, &env);
 
@@ -104,8 +112,8 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
     loop {
         input = macro_expand(input, &env)?;
         break match input {
-            Value::List(l) if l.is_empty() => Ok(Value::List(l)),
-            Value::List(l) => {
+            Value::List(l, m) if l.is_empty() => Ok(Value::List(l, m)),
+            Value::List(l, meta) => {
                 match &l[0] {
                     Value::Symbol(n) if n == "def!" => {
                         // TODO: arity checking
@@ -164,21 +172,24 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                         let env = env;
                         let params = iter.nth(1).unwrap().try_into_list_or_vec()?;
                         let ast = iter.next().unwrap();
-                        Ok(Value::Closure(Rc::new(Closure {
-                            ast,
-                            params,
-                            env,
-                            is_macro: false,
-                        })))
+                        Ok(Value::Closure(
+                            Rc::new(Closure {
+                                ast,
+                                params,
+                                env,
+                                is_macro: false,
+                            }),
+                            Box::new(Value::Nil),
+                        ))
                     }
                     Value::Symbol(n) if n == "defmacro!" => {
                         let mut iter = l.into_iter();
                         let key = iter.nth(1).unwrap();
                         let val = match eval(iter.next().unwrap(), env.clone())? {
-                            Value::Closure(c) => {
+                            Value::Closure(c, meta) => {
                                 let mut closure = c.as_ref().clone();
                                 closure.is_macro = true;
-                                Value::Closure(Rc::new(closure))
+                                Value::Closure(Rc::new(closure), meta)
                             }
                             _ => {
                                 // TODO: error
@@ -228,12 +239,12 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                         }
                     }
                     _ => {
-                        let mut new_list = eval_ast(Value::List(l), env.clone())?.into_list();
-                        while matches!(&new_list[0], Value::HostFn(HostFn::Apply)) {
+                        let mut new_list = eval_ast(Value::List(l, meta), env.clone())?.into_list();
+                        while matches!(&new_list[0], Value::HostFn(HostFn::Apply, _)) {
                             new_list.remove(0);
                             if new_list.len() > 1 {
                                 match new_list.pop().unwrap() {
-                                    Value::Vec(l) | Value::List(l) => {
+                                    Value::Vec(l, _) | Value::List(l, _) => {
                                         new_list.extend(l.into_iter());
                                     }
                                     not_a_list => new_list.push(not_a_list),
@@ -243,8 +254,8 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                         let mut args = new_list.into_iter();
                         let first = args.next().unwrap();
                         match first {
-                            Value::HostFn(HostFn::Apply) => unreachable!(),
-                            Value::HostFn(HostFn::ReadLine(rl)) => {
+                            Value::HostFn(HostFn::Apply, _) => unreachable!(),
+                            Value::HostFn(HostFn::ReadLine(rl), _) => {
                                 let mut rl = rl.borrow_mut();
                                 return match rl.readline(args.next().unwrap().try_as_str()?) {
                                     Ok(mut string) => {
@@ -258,13 +269,13 @@ fn eval(mut input: Value, mut env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
                                     Err(_) => Ok(Value::Nil),
                                 };
                             }
-                            Value::HostFn(HostFn::Eval(eval_env)) => {
+                            Value::HostFn(HostFn::Eval(eval_env), _) => {
                                 env = eval_env;
                                 input = args.next().unwrap();
                                 continue;
                             }
-                            Value::HostFn(HostFn::ByPtr(f)) => (f.0)(args.as_slice(), env),
-                            Value::Closure(closure) => {
+                            Value::HostFn(HostFn::ByPtr(f), _) => (f.0)(args.as_slice(), env),
+                            Value::Closure(closure, _) => {
                                 input = closure.ast.clone();
                                 env = Rc::new(RefCell::new(Env::new_with_binds(
                                     Some(closure.env.clone()),
@@ -295,26 +306,26 @@ fn print(value: RuntimeResult<Value>) {
 fn eval_ast(value: Value, env: Rc<RefCell<Env>>) -> RuntimeResult<Value> {
     // TODO: don't allocate here. We can reuse Vecs and Maps.
     match value {
-        Value::List(list) => {
+        Value::List(list, meta) => {
             let mut new_list = Vec::with_capacity(list.len());
             for v in list {
                 new_list.push(eval(v, env.clone())?);
             }
-            Ok(Value::List(new_list))
+            Ok(Value::List(new_list, meta))
         }
-        Value::Vec(vec) => {
+        Value::Vec(vec, meta) => {
             let mut new_vec = Vec::with_capacity(vec.len());
             for v in vec {
                 new_vec.push(eval(v, env.clone())?);
             }
-            Ok(Value::Vec(new_vec))
+            Ok(Value::Vec(new_vec, meta))
         }
-        Value::Map(map) => {
+        Value::Map(map, meta) => {
             let mut new_map = HashMap::with_capacity(map.len());
             for (k, v) in map {
                 new_map.insert(k, eval(v, env.clone())?);
             }
-            Ok(Value::Map(new_map))
+            Ok(Value::Map(new_map, meta))
         }
         Value::Symbol(s) => Env::get(&env, &s),
         v => Ok(v),
@@ -328,11 +339,11 @@ fn eval_fn_no_tco(
     mut args: Vec<Value>,
     env: Rc<RefCell<Env>>,
 ) -> RuntimeResult<Value> {
-    while matches!(&fun, Value::HostFn(HostFn::Apply)) {
+    while matches!(&fun, Value::HostFn(HostFn::Apply, _)) {
         fun = args.remove(0);
         if args.len() > 1 {
             match args.pop().unwrap() {
-                Value::Vec(l) | Value::List(l) => {
+                Value::Vec(l, _) | Value::List(l, _) => {
                     args.extend(l.into_iter());
                 }
                 not_a_list => args.push(not_a_list),
@@ -341,8 +352,8 @@ fn eval_fn_no_tco(
     }
     let mut args = args.into_iter();
     match fun {
-        Value::HostFn(HostFn::Apply) => unreachable!(),
-        Value::HostFn(HostFn::ReadLine(rl)) => {
+        Value::HostFn(HostFn::Apply, _) => unreachable!(),
+        Value::HostFn(HostFn::ReadLine(rl), _) => {
             match rl.borrow_mut().readline(args.next().unwrap().try_as_str()?) {
                 Ok(mut string) => {
                     if string.ends_with('\n') {
@@ -353,9 +364,9 @@ fn eval_fn_no_tco(
                 Err(_) => Ok(Value::Nil),
             }
         }
-        Value::HostFn(HostFn::Eval(eval_env)) => eval(args.next().unwrap(), eval_env),
-        Value::HostFn(HostFn::ByPtr(f)) => (f.0)(args.as_slice(), env),
-        Value::Closure(closure) => eval(
+        Value::HostFn(HostFn::Eval(eval_env), _) => eval(args.next().unwrap(), eval_env),
+        Value::HostFn(HostFn::ByPtr(f), _) => (f.0)(args.as_slice(), env),
+        Value::Closure(closure, _) => eval(
             closure.ast.clone(),
             Rc::new(RefCell::new(Env::new_with_binds(
                 Some(closure.env.clone()),
@@ -369,17 +380,18 @@ fn eval_fn_no_tco(
 
 fn quasiquote(ast: Value) -> RuntimeResult<Value> {
     match ast {
-        Value::List(l) if matches!(l.get(0), Some(Value::Symbol(n)) if n == "unquote") => {
+        Value::List(l, _) if matches!(l.get(0), Some(Value::Symbol(n)) if n == "unquote") => {
             Ok(l.into_iter().nth(1).unwrap())
         }
-        Value::List(l) => process_list(l),
-        Value::Vec(ast) => Ok(Value::List(vec![
-            Value::Symbol("vec".to_string()),
-            process_list(ast)?,
-        ])),
-        v @ Value::Map(_) | v @ Value::Symbol(_) => {
-            Ok(Value::List(vec![Value::Symbol("quote".to_string()), v]))
-        }
+        Value::List(l, _) => process_list(l),
+        Value::Vec(ast, _) => Ok(Value::List(
+            vec![Value::Symbol("vec".to_string()), process_list(ast)?],
+            Box::new(Value::Nil),
+        )),
+        v @ Value::Map(_, _) | v @ Value::Symbol(_) => Ok(Value::List(
+            vec![Value::Symbol("quote".to_string()), v],
+            Box::new(Value::Nil),
+        )),
         v => Ok(v),
     }
 }
@@ -388,32 +400,32 @@ fn process_list(list: Vec<Value>) -> RuntimeResult<Value> {
     let mut result = Vec::new();
     for elt in list.into_iter().rev() {
         result = match elt {
-            Value::List(l) if matches!(l.get(0), Some(Value::Symbol(n)) if n == "splice-unquote") =>
+            Value::List(l, meta) if matches!(l.get(0), Some(Value::Symbol(n)) if n == "splice-unquote") =>
             {
                 vec![
                     Value::Symbol("concat".to_string()),
                     l.into_iter().nth(1).unwrap(),
-                    Value::List(result),
+                    Value::List(result, meta),
                 ]
             }
             v => {
                 vec![
                     Value::Symbol("cons".to_string()),
                     quasiquote(v)?,
-                    Value::List(result),
+                    Value::List(result, Box::new(Value::Nil)),
                 ]
             }
         }
     }
-    Ok(Value::List(result))
+    Ok(Value::List(result, Box::new(Value::Nil)))
 }
 
 fn as_macro_call(ast: Value, env: &Rc<RefCell<Env>>) -> Option<Rc<Closure>> {
     match ast {
-        Value::List(v) if !v.is_empty() => {
+        Value::List(v, _) if !v.is_empty() => {
             if let Ok(k) = v.into_iter().next().unwrap().try_into_env_map_key() {
                 match Env::get(env, &k) {
-                    Ok(Value::Closure(c)) if c.is_macro => Some(c),
+                    Ok(Value::Closure(c, _)) if c.is_macro => Some(c),
                     _ => None,
                 }
             } else {

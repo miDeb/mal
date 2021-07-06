@@ -11,7 +11,7 @@ use crate::{
 
 pub fn init_env(env: &mut Env) {
     fn make_fn_val(f: fn(&[Value], Rc<RefCell<Env>>) -> RuntimeResult<Value>) -> Value {
-        Value::HostFn(HostFn::ByPtr(MalFnPtr(f)))
+        Value::HostFn(HostFn::ByPtr(MalFnPtr(f)), Box::new(Value::Nil))
     }
     env.set("+", make_fn_val(|list, _| Ok(&list[0] + &list[1])));
     env.set("-", make_fn_val(|list, _| Ok(&list[0] - &list[1])));
@@ -70,11 +70,11 @@ pub fn init_env(env: &mut Env) {
     );
     env.set(
         "list",
-        make_fn_val(|list, _| Ok(Value::List(list.to_vec()))),
+        make_fn_val(|list, _| Ok(Value::List(list.to_vec(), Box::new(Value::Nil)))),
     );
     env.set(
         "list?",
-        make_fn_val(|list, _| Ok(Value::Bool(matches!(list[0], Value::List(_))))),
+        make_fn_val(|list, _| Ok(Value::Bool(matches!(list[0], Value::List(_, _))))),
     );
     env.set(
         "empty?",
@@ -183,7 +183,7 @@ pub fn init_env(env: &mut Env) {
         make_fn_val(|args, _| {
             let mut list = args[1].clone().try_into_list_or_vec()?;
             list.insert(0, args[0].clone());
-            Ok(Value::List(list))
+            Ok(Value::List(list, Box::new(Value::Nil)))
         }),
     );
     env.set(
@@ -193,19 +193,24 @@ pub fn init_env(env: &mut Env) {
             for arg in args {
                 list.append(&mut arg.clone().try_into_list_or_vec()?);
             }
-            Ok(Value::List(list))
+            Ok(Value::List(list, Box::new(Value::Nil)))
         }),
     );
 
     env.set(
         "vec",
-        make_fn_val(|args, _| Ok(Value::Vec(args[0].clone().try_into_list_or_vec()?))),
+        make_fn_val(|args, _| {
+            Ok(Value::Vec(
+                args[0].clone().try_into_list_or_vec()?,
+                Box::new(Value::Nil),
+            ))
+        }),
     );
 
     env.set(
         "nth",
         make_fn_val(|args, _| match &args[0] {
-            Value::List(l) | Value::Vec(l) => {
+            Value::List(l, _) | Value::Vec(l, _) => {
                 let index_unconverted: i32 = args[1].try_as_number().unwrap();
                 let index: usize = index_unconverted
                     .try_into()
@@ -222,22 +227,26 @@ pub fn init_env(env: &mut Env) {
     env.set(
         "first",
         make_fn_val(|args, _| match &args[0] {
-            Value::List(l) | Value::Vec(l) if !l.is_empty() => Ok(l[0].clone()),
-            Value::List(_) | Value::Vec(_) | Value::Nil => Ok(Value::Nil),
+            Value::List(l, _) | Value::Vec(l, _) if !l.is_empty() => Ok(l[0].clone()),
+            Value::List(_, _) | Value::Vec(_, _) | Value::Nil => Ok(Value::Nil),
             v => Err(runtime_errors::not_a("list", v)),
         }),
     );
     env.set(
         "rest",
         make_fn_val(|args, _| match &args[0] {
-            Value::List(l) | Value::Vec(l) if !l.is_empty() => Ok(Value::List(l[1..].to_vec())),
-            Value::List(_) | Value::Vec(_) | Value::Nil => Ok(Value::List(Vec::new())),
+            Value::List(l, _) | Value::Vec(l, _) if !l.is_empty() => {
+                Ok(Value::List(l[1..].to_vec(), Box::new(Value::Nil)))
+            }
+            Value::List(_, _) | Value::Vec(_, _) | Value::Nil => {
+                Ok(Value::List(Vec::new(), Box::new(Value::Nil)))
+            }
             v => Err(runtime_errors::not_a("list", v)),
         }),
     );
     env.set("throw", make_fn_val(|args, _| Err(args[0].clone())));
 
-    env.set("apply", Value::HostFn(HostFn::Apply));
+    env.set("apply", Value::HostFn(HostFn::Apply, Box::new(Value::Nil)));
     env.set(
         "map",
         make_fn_val(|args, env| {
@@ -247,7 +256,7 @@ pub fn init_env(env: &mut Env) {
             for e in list.into_iter() {
                 new_list.push(eval_fn_no_tco(function.clone(), vec![e], env.clone())?);
             }
-            Ok(Value::List(new_list))
+            Ok(Value::List(new_list, Box::new(Value::Nil)))
         }),
     );
 
@@ -289,18 +298,18 @@ pub fn init_env(env: &mut Env) {
     );
     env.set(
         "vector",
-        make_fn_val(|list, _| Ok(Value::Vec(list.to_vec()))),
+        make_fn_val(|list, _| Ok(Value::Vec(list.to_vec(), Box::new(Value::Nil)))),
     );
     env.set(
         "vector?",
-        make_fn_val(|args, _| Ok(Value::Bool(matches!(&args[0], Value::Vec(_))))),
+        make_fn_val(|args, _| Ok(Value::Bool(matches!(&args[0], Value::Vec(_, _))))),
     );
     env.set(
         "sequential?",
         make_fn_val(|args, _| {
             Ok(Value::Bool(matches!(
                 &args[0],
-                Value::Vec(_) | Value::List(_)
+                Value::Vec(_, _) | Value::List(_, _)
             )))
         }),
     );
@@ -316,12 +325,12 @@ pub fn init_env(env: &mut Env) {
                     args.next().unwrap().clone(),
                 );
             }
-            Ok(Value::Map(map))
+            Ok(Value::Map(map, Box::new(Value::Nil)))
         }),
     );
     env.set(
         "map?",
-        make_fn_val(|args, _| Ok(Value::Bool(matches!(&args[0], Value::Map(_))))),
+        make_fn_val(|args, _| Ok(Value::Bool(matches!(&args[0], Value::Map(_, _))))),
     );
     env.set(
         "assoc",
@@ -335,7 +344,7 @@ pub fn init_env(env: &mut Env) {
                     args.next().unwrap().clone(),
                 );
             }
-            Ok(Value::Map(map))
+            Ok(Value::Map(map, Box::new(Value::Nil)))
         }),
     );
     env.set(
@@ -345,7 +354,7 @@ pub fn init_env(env: &mut Env) {
             for arg in args.iter().skip(1) {
                 map.remove(arg.as_hash_map_key()?);
             }
-            Ok(Value::Map(map))
+            Ok(Value::Map(map, Box::new(Value::Nil)))
         }),
     );
     env.set(
@@ -383,6 +392,7 @@ pub fn init_env(env: &mut Env) {
                         }
                     })
                     .collect(),
+                Box::new(Value::Nil),
             ))
         }),
     );
@@ -390,7 +400,10 @@ pub fn init_env(env: &mut Env) {
         "vals",
         make_fn_val(|args, _| {
             let map = args[0].try_as_map()?;
-            Ok(Value::List(map.values().cloned().collect()))
+            Ok(Value::List(
+                map.values().cloned().collect(),
+                Box::new(Value::Nil),
+            ))
         }),
     );
 
@@ -398,35 +411,112 @@ pub fn init_env(env: &mut Env) {
 
     env.set(
         "time-ms",
-        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+        make_fn_val(|_, _| {
+            Ok(Value::Number(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as i32,
+            ))
+        }),
     );
     env.set(
         "meta",
-        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+        make_fn_val(|args, _| match &args[0] {
+            Value::List(_, m)
+            | Value::Vec(_, m)
+            | Value::Map(_, m)
+            | Value::HostFn(_, m)
+            | Value::Closure(_, m) => Ok(m.as_ref().clone()),
+            v => Err(runtime_errors::not_a(
+                "value with metadata (list, vec or function)",
+                v,
+            )),
+        }),
     );
     env.set(
         "with-meta",
-        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+        make_fn_val(|args, _| {
+            let mut v = args[0].clone();
+            match &mut v {
+                Value::List(_, m)
+                | Value::Vec(_, m)
+                | Value::Map(_, m)
+                | Value::HostFn(_, m)
+                | Value::Closure(_, m) => {
+                    *m = Box::new(args[1].clone());
+                    Ok(v)
+                }
+                v => Err(runtime_errors::not_a(
+                    "value with metadata (list, vec or function)",
+                    v,
+                )),
+            }
+        }),
     );
     env.set(
         "fn?",
-        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+        make_fn_val(|args, _| {
+            Ok(Value::Bool(
+                matches!(&args[0], Value::HostFn(_, _))
+                    || matches!(
+                        &args[0],
+                        Value::Closure(c, _) if !c.is_macro
+                    ),
+            ))
+        }),
     );
     env.set(
         "string?",
-        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+        make_fn_val(|args, _| Ok(Value::Bool(matches!(&args[0], Value::String(_))))),
     );
     env.set(
         "number?",
-        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+        make_fn_val(|args, _| Ok(Value::Bool(matches!(&args[0], Value::Number(_))))),
+    );
+    env.set(
+        "macro?",
+        make_fn_val(|args, _| {
+            Ok(Value::Bool(matches!(
+                &args[0],
+                Value::Closure(c, _) if c.is_macro
+            )))
+        }),
     );
     env.set(
         "seq",
-        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+        make_fn_val(|args, _| match &args[0] {
+            Value::List(l, _) | Value::Vec(l, _) if l.is_empty() => Ok(Value::Nil),
+            Value::String(s) if s.is_empty() => Ok(Value::Nil),
+            Value::Nil => Ok(Value::Nil),
+            Value::List(l, _) | Value::Vec(l, _) => {
+                Ok(Value::List(l.clone(), Box::new(Value::Nil)))
+            }
+            Value::String(s) => Ok(Value::List(
+                s.chars().map(|c| Value::String(c.into())).collect(),
+                Box::new(Value::Nil),
+            )),
+            v => Err(runtime_errors::not_a("valid argument for seq", v)),
+        }),
     );
     env.set(
         "conj",
-        make_fn_val(|_, _| Err(runtime_errors::error_to_string("not yet implemented"))),
+        make_fn_val(|args, _| match &args[0] {
+            Value::List(l, _) => {
+                let mut new_list = Vec::new();
+                for arg in args[1..].iter().rev() {
+                    new_list.push(arg.clone())
+                }
+                new_list.extend(l.iter().cloned());
+                Ok(Value::List(new_list, Box::new(Value::Nil)))
+            }
+            Value::Vec(l, _) => {
+                let mut new_list: Vec<Value> = l.to_vec();
+                new_list.extend(args[1..].iter().cloned());
+                Ok(Value::Vec(new_list, Box::new(Value::Nil)))
+            }
+            v => Err(runtime_errors::not_a("list or vec", v)),
+        }),
     );
 }
 

@@ -70,9 +70,15 @@ impl<'a> Reader<'a> {
     fn read_form(&mut self) -> ParseResult<Value> {
         let token = self.peek()?;
         match token {
-            Token::LeftParen => Ok(Value::List(self.read_list(Token::RightParen)?)),
-            Token::LeftBracket => Ok(Value::Vec(self.read_list(Token::RightBracket)?)),
-            Token::LeftBrace => Ok(Value::Map(self.read_map()?)),
+            Token::LeftParen => Ok(Value::List(
+                self.read_list(Token::RightParen)?,
+                Box::new(Value::Nil),
+            )),
+            Token::LeftBracket => Ok(Value::Vec(
+                self.read_list(Token::RightBracket)?,
+                Box::new(Value::Nil),
+            )),
+            Token::LeftBrace => Ok(Value::Map(self.read_map()?, Box::new(Value::Nil))),
             Token::SingleQuote => {
                 self.next().unwrap();
                 self.read_reader_macro("quote")
@@ -98,11 +104,10 @@ impl<'a> Reader<'a> {
                 self.next().unwrap();
                 let second = self.read_form()?;
                 let first = self.read_form()?;
-                Ok(Value::List(vec![
-                    Value::Symbol("with-meta".into()),
-                    first,
-                    second,
-                ]))
+                Ok(Value::List(
+                    vec![Value::Symbol("with-meta".into()), first, second],
+                    Box::new(Value::Nil),
+                ))
             }
             _ => self.read_atom(),
         }
@@ -110,7 +115,10 @@ impl<'a> Reader<'a> {
 
     fn read_reader_macro(&mut self, name: impl Into<String>) -> ParseResult<Value> {
         let content = self.read_form()?;
-        Ok(Value::List(vec![Value::Symbol(name.into()), content]))
+        Ok(Value::List(
+            vec![Value::Symbol(name.into()), content],
+            Box::new(Value::Nil),
+        ))
     }
 
     fn read_list(&mut self, terminator: Token) -> ParseResult<Vec<Value>> {
