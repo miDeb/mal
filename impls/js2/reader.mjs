@@ -1,4 +1,4 @@
-export class Vec extends Array {}
+import { Vec } from "./types.mjs";
 
 class Reader {
   constructor(tokens) {
