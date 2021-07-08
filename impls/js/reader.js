@@ -32,7 +32,7 @@ function read_atom (reader) {
     } else if (token.match(/^-?[0-9][0-9.]*$/)) {
         return parseFloat(token,10);     // float
     } else if (token.match(/^"(?:\\.|[^\\"])*"$/)) {
-        return token.slice(1,token.length-1) 
+        return token.slice(1,token.length-1)
             .replace(/\\(.)/g, function (_, c) { return c === "n" ? "\n" : c})
     } else if (token[0] === "\"") {
             throw new Error("expected '\"', got EOF");
