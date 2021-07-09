@@ -28,8 +28,14 @@ function log(value) {
 
 rl.setPrompt("user> ");
 rl.prompt();
+const env = {
+  "+": (_env, a, b) => a + b,
+  "-": (_env, a, b) => a - b,
+  "*": (_env, a, b) => a * b,
+  "/": (_env, a, b) => a / b,
+};
 rl.on("line", (line) => {
-  console.log(compiled_rep(line));
+  console.log(compiled_rep(line, env));
   rl.prompt();
 });
 rl.on("close", () => {
@@ -43,17 +49,10 @@ function PRINT(input) {
   return pr_str(input, true);
 }
 
-function compiled_rep(input) {
+function compiled_rep(input, env) {
   let result;
   try {
-    result = js_eval(
-      compile(READ(input), {
-        "+": (_env, a, b) => a + b,
-        "-": (_env, a, b) => a - b,
-        "*": (_env, a, b) => a * b,
-        "/": (_env, a, b) => a / b,
-      })
-    );
+    result = js_eval(compile(READ(input), env));
   } catch (e) {
     result = e.message;
   }
