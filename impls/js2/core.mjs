@@ -1,7 +1,13 @@
 import { pr_str } from "./printer.mjs";
 import { eq } from "./types.mjs";
 import { is_list } from "./types.mjs";
+import { Atom } from "./types.mjs";
 import { ret_val } from "./fn_calls.mjs";
+import { readline } from "./node_readline.mjs";
+import { read_str } from "./reader.mjs";
+import { readFileSync } from "fs";
+import { is_atom } from "./types.mjs";
+import { call_fn } from "./fn_calls.mjs";
 
 export const core = () => ({
   "<": (a, b) => ret_val(a < b),
@@ -26,5 +32,15 @@ export const core = () => ({
   println: (...args) => {
     console.log(args.map((a) => pr_str(a, false)).join(" "));
     return ret_val(null);
+  },
+  readline: () => ret_val(readline()),
+  "read-string": (a) => ret_val(read_str(a)),
+  slurp: (a) => ret_val(readFileSync(a, "utf-8")),
+  atom: (a) => ret_val(new Atom(a)),
+  "atom?": (a) => ret_val(is_atom(a)),
+  deref: (a) => ret_val(a.val),
+  "reset!": (atom, val) => ret_val((atom.val = val)),
+  "swap!": (atom, fn, ...args) => {
+    return ret_val((atom.val = call_fn(fn, [atom.val, ...args])));
   },
 });

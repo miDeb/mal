@@ -1,3 +1,4 @@
+import { is_atom } from "./types.mjs";
 import { Vec } from "./types.mjs";
 
 export function pr_str(value, print_readably) {
@@ -37,6 +38,8 @@ export function pr_str(value, print_readably) {
     return "nil";
   } else if (typeof value === "function") {
     return "#<function>";
+  } else if (is_atom(value)) {
+    return `(atom ${pr_str(value.val, print_readably)})`;
   } else {
     return value.toString();
   }

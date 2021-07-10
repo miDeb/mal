@@ -12,6 +12,9 @@ export function is_symbol(value) {
 export function is_map(value) {
   return value instanceof Map;
 }
+export function is_atom(value) {
+  return value instanceof Atom;
+}
 
 export function eq(a, b) {
   if (Array.isArray(a) && Array.isArray(b)) {
@@ -37,4 +40,8 @@ export function eq(a, b) {
   } else {
     return a === b;
   }
+}
+
+export class Atom {
+  constructor(val) { this.val = val }
 }
