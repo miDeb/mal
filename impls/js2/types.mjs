@@ -12,3 +12,29 @@ export function is_symbol(value) {
 export function is_map(value) {
   return value instanceof Map;
 }
+
+export function eq(a, b) {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) {
+      return false;
+    }
+    for (let i = 0; i < a.length; i++) {
+      if (!eq(a[i], b[i])) {
+        return false;
+      }
+    }
+    return true;
+  } else if (a instanceof Map && b instanceof Map) {
+    if (a.size !== b.size) {
+      return false;
+    }
+    for (let k of a.keys()) {
+      if (!eq(a.get(k), b.get(k))) {
+        return false;
+      }
+    }
+    return true;
+  } else {
+    return a === b;
+  }
+}

@@ -5,9 +5,11 @@ import { is_list } from "./types.mjs";
 
 export function compile(input, global_env) {
   const compiler = new Compiler(global_env);
-  compiler.compile(input, (result) => "return " + result + ";");
+  compiler.compile(input, (result) => `return ${result};`);
   return compiler.finish();
 }
+
+const ignore_value = (v) => v + ";\n";
 
 class Compiler {
   compiled = "";
@@ -17,7 +19,9 @@ class Compiler {
   constructor(global_env) {
     this.constants.push(global_env);
     this.constants.push(Vec);
-    this.emit("{\nlet env = constants[0];\nlet Vec = constants[1];\n");
+    this.emit(
+      "{\nconst env = constants[0];\nconst Vec = constants[1];\nconst is_truthy = (v) => (v !== null && v !== false);\n"
+    );
   }
 
   create_scope() {
@@ -47,10 +51,21 @@ class Compiler {
 
   emit_tmp() {
     let tmp = "v" + this.tmp_count++;
-    this.emit("let " + tmp + ";\n");
+    this.emit(`let ${tmp};\n`);
     tmp = new String(tmp);
     Object.defineProperty(tmp, "assign", {
-      value: (v) => tmp + " = " + v + ";\n",
+      value: (v) => `${tmp} = ${v};\n`,
+      writable: false,
+    });
+    return tmp;
+  }
+
+  emit_tmp_assigned(value, use_let = false) {
+    let tmp = "v" + this.tmp_count++;
+    this.emit(`${use_let ? "let" : "const"} ${tmp} = ${value};\n`);
+    tmp = new String(tmp);
+    Object.defineProperty(tmp, "assign", {
+      value: (v) => `${tmp} = ${v};\n`,
       writable: false,
     });
     return tmp;
@@ -88,8 +103,7 @@ class Compiler {
 
   compile_symbol(sym, then) {
     const symbol = Symbol.keyFor(sym);
-    const tmp = this.emit_tmp();
-    this.emit(`${tmp} = env["${symbol}"];\n`);
+    const tmp = this.emit_tmp_assigned(`env["${symbol}"]`);
     this.emit(
       `if (typeof ${tmp} === "undefined") throw new Error("${symbol} not found");\n`
     );
@@ -105,7 +119,7 @@ class Compiler {
       const key = Symbol.keyFor(list[1]);
       const tmp = this.emit_tmp();
       this.compile(list[2], tmp.assign);
-      this.emit(then(`env['${key}'] = ${tmp}`));
+      this.emit(then(`env["${key}"] = ${tmp}`));
     } else if (is_symbol(list[0]) && Symbol.keyFor(list[0]) == "let*") {
       this.create_scope();
       let bindings = list[1];
@@ -117,6 +131,43 @@ class Compiler {
       }
       this.compile(list[2], then);
       this.end_scope();
+    } else if (is_symbol(list[0]) && Symbol.keyFor(list[0]) == "do") {
+      for (let index = 1; index < list.length - 1; index++) {
+        this.compile(list[index], ignore_value);
+      }
+      this.compile(list[list.length - 1], then);
+    } else if (is_symbol(list[0]) && Symbol.keyFor(list[0]) == "if") {
+      let condition = this.emit_tmp();
+      let result = this.emit_tmp();
+      this.compile(list[1], condition.assign);
+      this.emit(`if (is_truthy(${condition})){\n`);
+      this.compile(list[2], result.assign);
+      this.emit("} else {\n");
+      this.compile(list[3] ?? null, result.assign);
+      this.emit("}\n");
+      this.emit(then(result));
+    } else if (is_symbol(list[0]) && Symbol.keyFor(list[0]) == "fn*") {
+      let args = list[1];
+      let body = list[2];
+      // TODO: the current mechanism requires us to create an unnecessary temporary variable :(
+      let tmp = this.emit_tmp();
+      let env_tmp = this.emit_tmp_assigned("env");
+      this.emit(
+        `${tmp} = function() {\nconst env = Object.create(${env_tmp});\n`
+      );
+      for (let index = 0; index < args.length; index++) {
+        let symbol = Symbol.keyFor(args[index]);
+        if (symbol === "&") {
+          symbol = Symbol.keyFor(args[index + 1]);
+          this.emit(`env["${symbol}"] = [...arguments].slice(${index});\n`);
+          break;
+        } else {
+          this.emit(`env["${symbol}"] = arguments[${index}];\n`);
+        }
+      }
+      this.compile(body, (value) => `return ${value};\n`);
+      this.emit("};\n");
+      this.emit(then(tmp));
     }
     // Function call
     else {
@@ -126,8 +177,7 @@ class Compiler {
         const element = list[index];
         this.compile(element, temporaries[index].assign);
       }
-      let result =
-        temporaries[0] + "(env, " + temporaries.slice(1).join(", ") + ")";
+      let result = `${temporaries[0]}(${temporaries.slice(1).join(", ")})`;
       this.emit(then(result));
     }
   }
@@ -139,15 +189,14 @@ class Compiler {
       this.compile(elem, tmp.assign);
       temporaries.push(tmp);
     }
-    this.emit(then("Vec.from([" + temporaries.join(", ") + "])"));
+    this.emit(then(`Vec.from([${temporaries.join(", ")}])`));
   }
 
   compile_map(map, then) {
-    const tmp = this.emit_tmp();
-    this.emit(tmp + " = new Map();\n");
+    const tmp = this.emit_tmp_assigned("new Map()");
     for (const [key, value] of map) {
       this.compile(value, (compiled) => {
-        return tmp + '.set("' + key + '", ' + compiled + ");";
+        return `${tmp}.set("${key}", ${compiled});`;
       });
     }
     this.emit(then(tmp));

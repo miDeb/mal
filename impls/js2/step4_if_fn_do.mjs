@@ -3,6 +3,8 @@ import { read_str } from "./reader.mjs";
 import { pr_str } from "./printer.mjs";
 import { compile } from "./compiler.mjs";
 import { Vec } from "./types.mjs";
+import { is_list } from "./types.mjs";
+import { core } from "./core.mjs";
 
 const rl = createInterface({
   input: process.stdin,
@@ -28,14 +30,10 @@ function log(value) {
 
 rl.setPrompt("user> ");
 rl.prompt();
-const env = {
-  "+": (a, b) => a + b,
-  "-": (a, b) => a - b,
-  "*": (a, b) => a * b,
-  "/": (a, b) => a / b,
-};
+const env = core();
+rep("(def! not (fn* (a) (if a false true)))", env);
 rl.on("line", (line) => {
-  console.log(compiled_rep(line, env));
+  console.log(rep(line, env));
   rl.prompt();
 });
 rl.on("close", () => {
@@ -49,7 +47,7 @@ function PRINT(input) {
   return pr_str(input, true);
 }
 
-function compiled_rep(input, env) {
+function rep(input, env) {
   let result;
   try {
     result = js_eval(compile(READ(input), env));

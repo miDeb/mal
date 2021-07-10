@@ -35,6 +35,8 @@ export function pr_str(value, print_readably) {
     return Symbol.keyFor(value);
   } else if (value === null) {
     return "nil";
+  } else if (typeof value === "function") {
+    return "#<function>";
   } else {
     return value.toString();
   }

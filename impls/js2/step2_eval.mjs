@@ -48,10 +48,10 @@ function compiled_rep(input) {
   try {
     result = js_eval(
       compile(READ(input), {
-        "+": (_env, a, b) => a + b,
-        "-": (_env, a, b) => a - b,
-        "*": (_env, a, b) => a * b,
-        "/": (_env, a, b) => a / b,
+        "+": (a, b) => a + b,
+        "-": (a, b) => a - b,
+        "*": (a, b) => a * b,
+        "/": (a, b) => a / b,
       })
     );
   } catch (e) {
