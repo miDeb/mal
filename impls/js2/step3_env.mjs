@@ -3,6 +3,7 @@ import { read_str } from "./reader.mjs";
 import { pr_str } from "./printer.mjs";
 import { compile } from "./compiler.mjs";
 import { Vec } from "./types.mjs";
+import { ret_val } from "./fn_calls.mjs";
 
 const rl = createInterface({
   input: process.stdin,
@@ -29,10 +30,10 @@ function log(value) {
 rl.setPrompt("user> ");
 rl.prompt();
 const env = {
-  "+": (a, b) => a + b,
-  "-": (a, b) => a - b,
-  "*": (a, b) => a * b,
-  "/": (a, b) => a / b,
+  "+": (a, b) => ret_val(a + b),
+  "-": (a, b) => ret_val(a - b),
+  "*": (a, b) => ret_val(a * b),
+  "/": (a, b) => ret_val(a / b),
 };
 rl.on("line", (line) => {
   console.log(compiled_rep(line, env));

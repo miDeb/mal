@@ -1,29 +1,30 @@
 import { pr_str } from "./printer.mjs";
 import { eq } from "./types.mjs";
 import { is_list } from "./types.mjs";
+import { ret_val } from "./fn_calls.mjs";
 
 export const core = () => ({
-  "<": (a, b) => a < b,
-  "<=": (a, b) => a <= b,
-  ">": (a, b) => a > b,
-  ">=": (a, b) => a >= b,
-  "+": (a, b) => a + b,
-  "-": (a, b) => a - b,
-  "*": (a, b) => a * b,
-  "/": (a, b) => a / b,
+  "<": (a, b) => ret_val(a < b),
+  "<=": (a, b) => ret_val(a <= b),
+  ">": (a, b) => ret_val(a > b),
+  ">=": (a, b) => ret_val(a >= b),
+  "+": (a, b) => ret_val(a + b),
+  "-": (a, b) => ret_val(a - b),
+  "*": (a, b) => ret_val(a * b),
+  "/": (a, b) => ret_val(a / b),
   prn: (...args) => {
     console.log(args.map((a) => pr_str(a, true)).join(" "));
-    return null;
+    return ret_val(null);
   },
-  list: (...args) => args,
-  "list?": is_list,
-  "empty?": (arg) => arg.length === 0,
-  count: (arg) => arg?.length ?? 0,
-  "=": eq,
-  "pr-str": (...args) => args.map((a) => pr_str(a, true)).join(" "),
-  str: (...args) => args.map((a) => pr_str(a, false)).join(""),
+  list: (...args) => ret_val(args),
+  "list?": (arg) => ret_val(is_list(arg)),
+  "empty?": (arg) => ret_val(arg.length === 0),
+  count: (arg) => ret_val(arg?.length ?? 0),
+  "=": (a, b) => ret_val(eq(a, b)),
+  "pr-str": (...args) => ret_val(args.map((a) => pr_str(a, true)).join(" ")),
+  str: (...args) => ret_val(args.map((a) => pr_str(a, false)).join("")),
   println: (...args) => {
     console.log(args.map((a) => pr_str(a, false)).join(" "));
-    return null;
+    return ret_val(null);
   },
 });

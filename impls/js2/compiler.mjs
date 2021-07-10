@@ -1,3 +1,4 @@
+import { ret_val, ret_fn_call, call_fn } from "./fn_calls.mjs";
 import { Vec, is_vec } from "./types.mjs";
 import { is_map } from "./types.mjs";
 import { is_symbol } from "./types.mjs";
@@ -5,11 +6,13 @@ import { is_list } from "./types.mjs";
 
 export function compile(input, global_env) {
   const compiler = new Compiler(global_env);
+  // Maybe TCO here too?
   compiler.compile(input, (result) => `return ${result};`);
   return compiler.finish();
 }
 
-const ignore_value = (v) => v + ";\n";
+const ignore_value = (v) => `${v};\n`;
+const return_result = (v) => `return ret_val(${v});\n`;
 
 class Compiler {
   compiled = "";
@@ -22,6 +25,12 @@ class Compiler {
     this.emit(
       "{\nconst env = constants[0];\nconst Vec = constants[1];\nconst is_truthy = (v) => (v !== null && v !== false);\n"
     );
+    this.constants.push(ret_val);
+    this.emit("const ret_val = constants[2];\n");
+    this.constants.push(ret_fn_call);
+    this.emit("const ret_fn_call = constants[3];\n");
+    this.constants.push(call_fn);
+    this.emit("const call_fn = constants[4];\n");
   }
 
   create_scope() {
@@ -138,20 +147,18 @@ class Compiler {
       this.compile(list[list.length - 1], then);
     } else if (is_symbol(list[0]) && Symbol.keyFor(list[0]) == "if") {
       let condition = this.emit_tmp();
-      let result = this.emit_tmp();
       this.compile(list[1], condition.assign);
       this.emit(`if (is_truthy(${condition})){\n`);
-      this.compile(list[2], result.assign);
+      this.compile(list[2], then);
       this.emit("} else {\n");
-      this.compile(list[3] ?? null, result.assign);
+      this.compile(list[3] ?? null, then);
       this.emit("}\n");
-      this.emit(then(result));
     } else if (is_symbol(list[0]) && Symbol.keyFor(list[0]) == "fn*") {
       let args = list[1];
       let body = list[2];
       // TODO: the current mechanism requires us to create an unnecessary temporary variable :(
       let tmp = this.emit_tmp();
-      let env_tmp = this.emit_tmp_assigned("env");
+      const env_tmp = this.emit_tmp_assigned("env");
       this.emit(
         `${tmp} = function() {\nconst env = Object.create(${env_tmp});\n`
       );
@@ -165,25 +172,29 @@ class Compiler {
           this.emit(`env["${symbol}"] = arguments[${index}];\n`);
         }
       }
-      this.compile(body, (value) => `return ${value};\n`);
+      this.compile(body, return_result);
       this.emit("};\n");
       this.emit(then(tmp));
     }
     // Function call
     else {
-      const temporaries = list.map((_) => this.emit_tmp());
-      this.compile(list[0], temporaries[0].assign);
-      for (let index = 1; index < list.length; index++) {
-        const element = list[index];
-        this.compile(element, temporaries[index].assign);
+      const fn = this.emit_tmp();
+      this.compile(list[0], fn.assign);
+      const args = this.emit_tmp_assigned("[]");
+      for (const arg of list.slice(1)) {
+        this.compile(arg, (compiled) => `${args}.push(${compiled});\n`);
       }
-      let result = `${temporaries[0]}(${temporaries.slice(1).join(", ")})`;
-      this.emit(then(result));
+      // Check if we can do tco
+      if (then === return_result) {
+        this.emit(`return ret_fn_call(${fn}, ${args})`);
+      } else {
+        this.emit(then(`call_fn(${fn}, ${args})`));
+      }
     }
   }
 
   compile_vec(list, then) {
-    let temporaries = [];
+    const temporaries = [];
     for (const elem of list) {
       const tmp = this.emit_tmp();
       this.compile(elem, tmp.assign);
