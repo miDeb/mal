@@ -1,7 +1,7 @@
 export function call_fn(fn, args) {
-  let ret_val = fn.apply(fn, args);
+  let ret_val = fn(...args);
   while (ret_val.tco) {
-    ret_val = ret_val.fn.apply(ret_val.fn, ret_val.args);
+    ret_val = ret_val.fn(...ret_val.args);
   }
   return ret_val.value;
 }

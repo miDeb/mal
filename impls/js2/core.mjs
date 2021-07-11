@@ -1,6 +1,5 @@
 import { pr_str } from "./printer.mjs";
 import { eq } from "./types.mjs";
-import { is_list } from "./types.mjs";
 import { Atom } from "./types.mjs";
 import { ret_val } from "./fn_calls.mjs";
 import { readline } from "./node_readline.mjs";
@@ -8,6 +7,7 @@ import { read_str } from "./reader.mjs";
 import { readFileSync } from "fs";
 import { is_atom } from "./types.mjs";
 import { call_fn } from "./fn_calls.mjs";
+import { Vec, is_vec, is_list } from "./types.mjs";
 
 export const core = () => ({
   "<": (a, b) => ret_val(a < b),
@@ -42,5 +42,22 @@ export const core = () => ({
   "reset!": (atom, val) => ret_val((atom.val = val)),
   "swap!": (atom, fn, ...args) => {
     return ret_val((atom.val = call_fn(fn, [atom.val, ...args])));
+  },
+  cons: (element, list) => ret_val([element, ...list]),
+  concat: (...lists) => {
+    const result = [];
+    for (const list of lists) {
+      result.push(...list);
+    }
+    return ret_val(result);
+  },
+  vec: (arg) => {
+    if (is_list(arg)) {
+      return ret_val(Vec.from(arg));
+    } else if (is_vec) {
+      return ret_val(arg);
+    } else {
+      throw new Error(`expected list or vec, got ${arg}`);
+    }
   },
 });

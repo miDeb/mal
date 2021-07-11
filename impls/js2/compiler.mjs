@@ -31,6 +31,8 @@ class Compiler {
     this.emit("const ret_fn_call = constants[3];\n");
     this.constants.push(call_fn);
     this.emit("const call_fn = constants[4];\n");
+    this.constants.push(this.quasiquote);
+    this.emit("const quasiquote = constants[5];\n");
   }
 
   create_scope() {
@@ -175,6 +177,15 @@ class Compiler {
       this.compile(body, return_result);
       this.emit("};\n");
       this.emit(then(tmp));
+    } else if (is_symbol(list[0]) && Symbol.keyFor(list[0]) == "quote") {
+      this.compile_constant(list[1], then);
+    } else if (
+      is_symbol(list[0]) &&
+      Symbol.keyFor(list[0]) == "quasiquoteexpand"
+    ) {
+      this.compile_constant(quasiquote(list[1]), then);
+    } else if (is_symbol(list[0]) && Symbol.keyFor(list[0]) == "quasiquote") {
+      this.compile(quasiquote(list[1]), then);
     }
     // Function call
     else {
@@ -212,4 +223,34 @@ class Compiler {
     }
     this.emit(then(tmp));
   }
+}
+
+function quasiquote(ast) {
+  if (is_list(ast)) {
+    if (ast[0] === Symbol.for("unquote")) {
+      return ast[1];
+    } else {
+      return quasiquote_list(ast);
+    }
+  }
+  if (is_map(ast) || is_symbol(ast)) {
+    return [Symbol.for("quote"), ast];
+  } else if (is_vec(ast)) {
+    return [Symbol.for("vec"), quasiquote_list(ast)];
+  } else {
+    return ast;
+  }
+}
+
+function quasiquote_list(ast) {
+  let result = [];
+  for (let index = ast.length - 1; index >= 0; index--) {
+    const elt = ast[index];
+    if (is_list(elt) && elt[0] === Symbol.for("splice-unquote")) {
+      result = [Symbol.for("concat"), elt[1], result];
+    } else {
+      result = [Symbol.for("cons"), quasiquote(elt), result];
+    }
+  }
+  return result;
 }
