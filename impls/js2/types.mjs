@@ -15,6 +15,9 @@ export function is_map(value) {
 export function is_atom(value) {
   return value instanceof Atom;
 }
+export function is_macro(value) {
+  return value?.is_macro ?? false;
+}
 
 export function eq(a, b) {
   if (Array.isArray(a) && Array.isArray(b)) {

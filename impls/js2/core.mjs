@@ -60,4 +60,24 @@ export const core = () => ({
       throw new Error(`expected list or vec, got ${arg}`);
     }
   },
+  nth: (list, index) => {
+    if (list.length <= index) {
+      throw new Error("index out of bounds");
+    }
+    return ret_val(list[index]);
+  },
+  first: (list) => {
+    if (list?.length) {
+      return ret_val(list[0]);
+    } else {
+      return ret_val(null);
+    }
+  },
+  rest: (list) => {
+    if (list === null) {
+      return ret_val([]);
+    } else {
+      return ret_val(Array.from(list.slice(1)));
+    }
+  },
 });

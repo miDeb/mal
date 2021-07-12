@@ -3,6 +3,22 @@ import { Vec, is_vec } from "./types.mjs";
 import { is_map } from "./types.mjs";
 import { is_symbol } from "./types.mjs";
 import { is_list } from "./types.mjs";
+import { is_macro } from "./types.mjs";
+
+export function compile_and_eval(input, global_env) {
+  return js_eval(compile(input, global_env));
+}
+
+const memoized_compilations = new Map();
+function js_eval([fn_body, const_table]) {
+  let fn = memoized_compilations.get(fn_body);
+  if (!fn) {
+    //console.log(fn_body);
+    fn = Function(`"use strict";const constants = arguments[0];${fn_body}`);
+    memoized_compilations.set(fn_body, fn);
+  }
+  return fn(const_table);
+}
 
 export function compile(input, global_env) {
   const compiler = new Compiler(global_env);
@@ -33,6 +49,12 @@ class Compiler {
     this.emit("const call_fn = constants[4];\n");
     this.constants.push(this.quasiquote);
     this.emit("const quasiquote = constants[5];\n");
+    this.constants.push(is_macro);
+    this.emit("const is_macro = constants[6];\n");
+    this.constants.push(macro_expand);
+    this.emit("const macro_expand = constants[7];\n");
+    this.constants.push(compile_and_eval);
+    this.emit("const compile_and_eval = constants[8];\n");
   }
 
   create_scope() {
@@ -186,20 +208,49 @@ class Compiler {
       this.compile_constant(quasiquote(list[1]), then);
     } else if (is_symbol(list[0]) && Symbol.keyFor(list[0]) == "quasiquote") {
       this.compile(quasiquote(list[1]), then);
+    } else if (is_symbol(list[0]) && Symbol.keyFor(list[0]) == "defmacro!") {
+      const key = Symbol.keyFor(list[1]);
+      const tmp = this.emit_tmp();
+      this.compile(list[2], tmp.assign);
+      this.emit(
+        `Object.defineProperty(${tmp}, "is_macro", {value: true, writeable: false});\n`
+      );
+      this.emit(then(`env["${key}"] = ${tmp}`));
+    } else if (is_symbol(list[0]) && Symbol.keyFor(list[0]) == "macroexpand") {
+      const fn = this.emit_tmp();
+      this.compile(list[1][0], fn.assign);
+      const args = this.emit_tmp();
+      this.compile_constant(list[1].slice(1), args.assign);
+      this.emit(then(`macro_expand(${fn}, ${args}, env)`));
     }
-    // Function call
+    // Function/macro call
     else {
       const fn = this.emit_tmp();
       this.compile(list[0], fn.assign);
-      const args = this.emit_tmp_assigned("[]");
-      for (const arg of list.slice(1)) {
-        this.compile(arg, (compiled) => `${args}.push(${compiled});\n`);
+      this.emit(`if (is_macro(${fn})) {\n`);
+      // macro call
+      {
+        const args = this.emit_tmp();
+        this.compile_constant(list.slice(1), args.assign);
+        // This is really bad. We call back to the compiler every time we encounter a macro.
+        this.emit(
+          then(`compile_and_eval(macro_expand(${fn}, ${args}, env), env)`)
+        );
       }
-      // Check if we can do tco
-      if (then === return_result) {
-        this.emit(`return ret_fn_call(${fn}, ${args})`);
-      } else {
-        this.emit(then(`call_fn(${fn}, ${args})`));
+      this.emit("} else {\n");
+      // function call
+      {
+        const args = this.emit_tmp_assigned("[]");
+        for (const arg of list.slice(1)) {
+          this.compile(arg, (compiled) => `${args}.push(${compiled});\n`);
+        }
+        // Check if we can do tco
+        if (then === return_result) {
+          this.emit(`return ret_fn_call(${fn}, ${args})`);
+        } else {
+          this.emit(then(`call_fn(${fn}, ${args})`));
+        }
+        this.emit("}\n");
       }
     }
   }
@@ -253,4 +304,18 @@ function quasiquote_list(ast) {
     }
   }
   return result;
+}
+
+function is_macro_call(value, env) {
+  return is_list(value) && is_macro(env[Symbol.keyFor(value[0])]);
+}
+
+function macro_expand(fn, args, env) {
+  let ast = call_fn(fn, args);
+  while (is_macro_call(ast, env)) {
+    const fn = env[Symbol.keyFor(ast[0])];
+    const args = ast.slice(1);
+    ast = call_fn(fn, args);
+  }
+  return ast;
 }

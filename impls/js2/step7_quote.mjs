@@ -48,6 +48,7 @@ rep(
   `(def! load-file (fn* (f) (eval (read-string (str "(do " (slurp f) "\nnil)")))))`,
   env
 );
+rep("(def! not (fn* (a) (if a false true)))", env);
 env["*ARGV*"] = process.argv.slice(3);
 if (process.argv.length > 2) {
   rep(`(load-file "${process.argv[2]}")`, env);

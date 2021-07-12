@@ -1,20 +1,9 @@
 import { read_str } from "./reader.mjs";
 import { pr_str } from "./printer.mjs";
-import { compile } from "./compiler.mjs";
 import { core } from "./core.mjs";
 import { readline } from "./node_readline.mjs";
 import { ret_val } from "./fn_calls.mjs";
-
-const memoized_compilations = new Map();
-function js_eval([fn_body, const_table]) {
-  let fn = memoized_compilations.get(fn_body);
-  if (!fn) {
-    //console.log(fn_body);
-    fn = Function(`"use strict";const constants = arguments[0];${fn_body}`);
-    memoized_compilations.set(fn_body, fn);
-  }
-  return fn(const_table);
-}
+import { compile_and_eval } from "./compiler.mjs";
 
 function READ(input) {
   return read_str(input);
@@ -26,7 +15,7 @@ function PRINT(input) {
 function rep(input, env) {
   let result;
   try {
-    result = PRINT(js_eval(compile(READ(input), env)));
+    result = PRINT(compile_and_eval(READ(input), env));
   } catch (e) {
     result = e.message;
   }
@@ -38,7 +27,7 @@ const env = core();
 env["eval"] = (prog) => {
   let result;
   try {
-    result = ret_val(js_eval(compile(prog, env)));
+    result = ret_val(compile_and_eval(prog, env));
   } catch (e) {
     result = e.message;
   }
@@ -49,6 +38,10 @@ rep(
   env
 );
 rep("(def! not (fn* (a) (if a false true)))", env);
+rep(
+  "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))",
+  env
+);
 env["*ARGV*"] = process.argv.slice(3);
 if (process.argv.length > 2) {
   rep(`(load-file "${process.argv[2]}")`, env);
